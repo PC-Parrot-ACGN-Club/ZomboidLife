@@ -7,11 +7,12 @@ export class WeaponSystem {
   private currentWeapon: WeaponType = 'shotgun';
   private ammo: number = GAME_CONFIG.WEAPONS.SHOTGUN.MAGAZINE_SIZE;
   private isReloading: boolean = false;
-  private reloadProgressMs: number = 0;
+  private reloadShellTimerMs: number = 0;
   private attackCooldownMs: number = 0;
   private enemyManager: EnemyManager;
   private currentScene: SceneType = GAME_CONFIG.SCENES.DOOR;
   private recoilShake: number = 0;
+  private pumpSoundTimeout: number | null = null;
 
   constructor(enemyManager: EnemyManager) {
     this.enemyManager = enemyManager;
@@ -20,10 +21,14 @@ export class WeaponSystem {
   }
 
   public reset(): void {
+    if (this.pumpSoundTimeout !== null) {
+      clearTimeout(this.pumpSoundTimeout);
+      this.pumpSoundTimeout = null;
+    }
     this.currentWeapon = 'shotgun';
     this.ammo = GAME_CONFIG.WEAPONS.SHOTGUN.MAGAZINE_SIZE;
     this.isReloading = false;
-    this.reloadProgressMs = 0;
+    this.reloadShellTimerMs = 0;
     this.attackCooldownMs = 0;
     this.recoilShake = 0;
   }
@@ -39,22 +44,36 @@ export class WeaponSystem {
       this.recoilShake = Math.max(0, this.recoilShake - deltaMs * 0.05);
     }
 
-    // 装弹计时
+    // 逐发装弹计时 (Shell-by-shell reload)
     if (this.isReloading) {
-      this.reloadProgressMs += deltaMs;
-      const targetTime = GAME_CONFIG.WEAPONS.SHOTGUN.RELOAD_TIME_MS;
-      if (this.reloadProgressMs >= targetTime) {
-        this.isReloading = false;
-        this.reloadProgressMs = 0;
-        this.ammo = GAME_CONFIG.WEAPONS.SHOTGUN.MAGAZINE_SIZE;
-        audioManager.playReload();
-        eventBus.emit('WEAPON_RELOAD_COMPLETE', this.ammo);
+      this.reloadShellTimerMs += deltaMs;
+      const targetTime = GAME_CONFIG.WEAPONS.SHOTGUN.RELOAD_TIME_PER_SHELL_MS;
+
+      if (this.reloadShellTimerMs >= targetTime) {
+        this.reloadShellTimerMs = 0;
+        this.ammo++;
+
+        // 播放单发压弹声
+        audioManager.playShellInsert();
+        eventBus.emit('WEAPON_SHELL_INSERTED', {
+          ammo: this.ammo,
+          maxAmmo: GAME_CONFIG.WEAPONS.SHOTGUN.MAGAZINE_SIZE,
+        });
+
+        // 若已装满 8 发，完成装填并拉栓
+        if (this.ammo >= GAME_CONFIG.WEAPONS.SHOTGUN.MAGAZINE_SIZE) {
+          this.isReloading = false;
+          audioManager.playShotgunPump();
+          eventBus.emit('WEAPON_RELOAD_COMPLETE', this.ammo);
+        }
       }
     }
   }
 
   public switchWeapon(): void {
-    if (this.isReloading) return;
+    if (this.isReloading) {
+      this.interruptReload();
+    }
     this.currentWeapon = this.currentWeapon === 'shotgun' ? 'knife' : 'shotgun';
     eventBus.emit('WEAPON_SWITCHED', this.currentWeapon);
   }
@@ -65,28 +84,54 @@ export class WeaponSystem {
     if (this.isReloading) return;
 
     this.isReloading = true;
-    this.reloadProgressMs = 0;
-    audioManager.playReload();
-    eventBus.emit('WEAPON_RELOAD_START');
+    this.reloadShellTimerMs = 0;
+    eventBus.emit('WEAPON_RELOAD_START', {
+      currentAmmo: this.ammo,
+      maxAmmo: GAME_CONFIG.WEAPONS.SHOTGUN.MAGAZINE_SIZE,
+    });
+  }
+
+  public interruptReload(): void {
+    if (!this.isReloading) return;
+    this.isReloading = false;
+    this.reloadShellTimerMs = 0;
+    eventBus.emit('WEAPON_RELOAD_INTERRUPTED', this.ammo);
   }
 
   public attack(): void {
     if (this.attackCooldownMs > 0) return;
 
     if (this.currentWeapon === 'shotgun') {
-      if (this.isReloading) return;
+      // 若正在逐发装弹中：若有弹药则立即打断装弹开火，若无弹药则继续装填
+      if (this.isReloading) {
+        if (this.ammo > 0) {
+          this.interruptReload();
+        } else {
+          return;
+        }
+      }
 
       if (this.ammo <= 0) {
         this.startReload();
         return;
       }
 
-      // 消耗弹药并开火
+      // 消耗 1 发弹药并开火
       this.ammo--;
       this.attackCooldownMs = GAME_CONFIG.WEAPONS.SHOTGUN.COOLDOWN_MS;
       this.recoilShake = 12; // 触发震屏
 
       audioManager.playShotgunFire();
+
+      // 开火后 240ms 触发泵动推弹上膛机械声 (Pump Action)
+      if (this.pumpSoundTimeout !== null) {
+        clearTimeout(this.pumpSoundTimeout);
+      }
+      this.pumpSoundTimeout = window.setTimeout(() => {
+        audioManager.playShotgunPump();
+        this.pumpSoundTimeout = null;
+      }, 240);
+
       eventBus.emit('WEAPON_FIRED', { weapon: 'shotgun', remainingAmmo: this.ammo });
       eventBus.emit('NOISE_PRODUCED', GAME_CONFIG.WEAPONS.SHOTGUN.NOISE_INTENSITY);
 
@@ -97,6 +142,10 @@ export class WeaponSystem {
         GAME_CONFIG.WEAPONS.SHOTGUN.DAMAGE
       );
     } else {
+      if (this.isReloading) {
+        this.interruptReload();
+      }
+
       // 战术刀挥击
       this.attackCooldownMs = GAME_CONFIG.WEAPONS.KNIFE.COOLDOWN_MS;
       audioManager.playKnifeSwing();
@@ -109,6 +158,10 @@ export class WeaponSystem {
         GAME_CONFIG.WEAPONS.KNIFE.DAMAGE
       );
     }
+  }
+
+  public getIsReloading(): boolean {
+    return this.isReloading;
   }
 
   public getCurrentWeapon(): WeaponType {

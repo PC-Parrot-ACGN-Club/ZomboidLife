@@ -361,26 +361,173 @@ export class AudioManager {
   }
 
   /**
-   * 装弹咔哒声
+   * 逐发压入霰弹枪弹药声 (金属滑动与压入卡槽声)
    */
-  public playReload(): void {
+  public playShellInsert(): void {
     if (!this.ctx || this.isMuted) return;
     this.resume();
     const t = this.ctx.currentTime;
     const { inputNode } = this.createPannedChain(0.0);
 
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(900, t);
-    osc.frequency.setValueAtTime(1400, t + 0.08);
-    gain.gain.setValueAtTime(0.3, t);
-    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
+    // 1. 金属弹壳刮入声
+    const osc1 = this.ctx.createOscillator();
+    const gain1 = this.ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(1400, t);
+    osc1.frequency.exponentialRampToValueAtTime(800, t + 0.07);
+    gain1.gain.setValueAtTime(0.35, t);
+    gain1.gain.exponentialRampToValueAtTime(0.01, t + 0.07);
+    osc1.connect(gain1);
+    gain1.connect(inputNode);
+    osc1.start(t);
+    osc1.stop(t + 0.07);
 
-    osc.connect(gain);
-    gain.connect(inputNode);
-    osc.start(t);
-    osc.stop(t + 0.18);
+    // 2. 弹夹卡簧卡扣清脆锁定声
+    const osc2 = this.ctx.createOscillator();
+    const gain2 = this.ctx.createGain();
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(1800, t + 0.05);
+    osc2.frequency.setValueAtTime(2400, t + 0.09);
+    gain2.gain.setValueAtTime(0.4, t + 0.05);
+    gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.14);
+    osc2.connect(gain2);
+    gain2.connect(inputNode);
+    osc2.start(t + 0.05);
+    osc2.stop(t + 0.14);
+  }
+
+  /**
+   * 泵动式霰弹枪拉栓/上膛声 (咔嚓机械滑动双音)
+   */
+  public playShotgunPump(): void {
+    if (!this.ctx || this.isMuted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const { inputNode } = this.createPannedChain(0.0);
+
+    // 后拉 (Rack Back)
+    const osc1 = this.ctx.createOscillator();
+    const gain1 = this.ctx.createGain();
+    osc1.type = 'sawtooth';
+    osc1.frequency.setValueAtTime(450, t);
+    osc1.frequency.exponentialRampToValueAtTime(180, t + 0.08);
+    gain1.gain.setValueAtTime(0.45, t);
+    gain1.gain.exponentialRampToValueAtTime(0.01, t + 0.08);
+    osc1.connect(gain1);
+    gain1.connect(inputNode);
+    osc1.start(t);
+    osc1.stop(t + 0.08);
+
+    // 推弹上膛 (Rack Forward - 间隔 80ms)
+    const osc2 = this.ctx.createOscillator();
+    const gain2 = this.ctx.createGain();
+    osc2.type = 'square';
+    osc2.frequency.setValueAtTime(750, t + 0.09);
+    osc2.frequency.setValueAtTime(1200, t + 0.14);
+    gain2.gain.setValueAtTime(0.5, t + 0.09);
+    gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+    osc2.connect(gain2);
+    gain2.connect(inputNode);
+    osc2.start(t + 0.09);
+    osc2.stop(t + 0.2);
+  }
+
+  /**
+   * 装弹咔哒声
+   */
+  public playReload(): void {
+    this.playShellInsert();
+  }
+
+  /**
+   * 自动机枪扫射爆发音 (正门容错清除: 连环重机枪扫射 + 弹药打空咔哒声)
+   */
+  public playTurretFire(): void {
+    if (!this.ctx || this.isMuted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const { inputNode } = this.createPannedChain(0.0);
+
+    // 连续 8 发极速连射机枪火舌
+    const shotCount = 8;
+    const shotInterval = 0.07;
+    for (let i = 0; i < shotCount; i++) {
+      const shotTime = t + i * shotInterval;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(280, shotTime);
+      osc.frequency.exponentialRampToValueAtTime(40, shotTime + 0.06);
+      gain.gain.setValueAtTime(0.8, shotTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, shotTime + 0.06);
+      osc.connect(gain);
+      gain.connect(inputNode);
+      osc.start(shotTime);
+      osc.stop(shotTime + 0.06);
+    }
+
+    // 扫射完毕后弹药打空撞针清脆声 (Empty Click)
+    const emptyTime = t + shotCount * shotInterval + 0.1;
+    const emptyOsc = this.ctx.createOscillator();
+    const emptyGain = this.ctx.createGain();
+    emptyOsc.type = 'triangle';
+    emptyOsc.frequency.setValueAtTime(2200, emptyTime);
+    emptyGain.gain.setValueAtTime(0.5, emptyTime);
+    emptyGain.gain.exponentialRampToValueAtTime(0.01, emptyTime + 0.08);
+    emptyOsc.connect(emptyGain);
+    emptyGain.connect(inputNode);
+    emptyOsc.start(emptyTime);
+    emptyOsc.stop(emptyTime + 0.08);
+  }
+
+  /**
+   * 活板门落石/重锤陷阱触发音 (地窖容错清除: 机关卡簧断裂 + 巨物崩塌碾碎)
+   */
+  public playTrapTrigger(): void {
+    if (!this.ctx || this.isMuted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const { inputNode } = this.createPannedChain(-0.75, 800);
+
+    // 1. 机械陷阱触发拉线崩断声
+    const snapOsc = this.ctx.createOscillator();
+    const snapGain = this.ctx.createGain();
+    snapOsc.type = 'square';
+    snapOsc.frequency.setValueAtTime(1600, t);
+    snapOsc.frequency.exponentialRampToValueAtTime(300, t + 0.12);
+    snapGain.gain.setValueAtTime(0.6, t);
+    snapGain.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+    snapOsc.connect(snapGain);
+    snapGain.connect(inputNode);
+    snapOsc.start(t);
+    snapOsc.stop(t + 0.12);
+
+    // 2. 巨型滚石/刺木重锤轰然砸下 (震天低音)
+    const crashTime = t + 0.14;
+    const thudOsc = this.ctx.createOscillator();
+    const thudGain = this.ctx.createGain();
+    thudOsc.type = 'sawtooth';
+    thudOsc.frequency.setValueAtTime(90, crashTime);
+    thudOsc.frequency.exponentialRampToValueAtTime(25, crashTime + 0.55);
+    thudGain.gain.setValueAtTime(1.2, crashTime);
+    thudGain.gain.exponentialRampToValueAtTime(0.01, crashTime + 0.55);
+    thudOsc.connect(thudGain);
+    thudGain.connect(inputNode);
+    thudOsc.start(crashTime);
+    thudOsc.stop(crashTime + 0.55);
+
+    // 3. 骨骼碎裂/碾压杂音
+    const crunchOsc = this.ctx.createOscillator();
+    const crunchGain = this.ctx.createGain();
+    crunchOsc.type = 'triangle';
+    crunchOsc.frequency.setValueAtTime(350, crashTime + 0.05);
+    crunchOsc.frequency.exponentialRampToValueAtTime(60, crashTime + 0.3);
+    crunchGain.gain.setValueAtTime(0.7, crashTime + 0.05);
+    crunchGain.gain.exponentialRampToValueAtTime(0.01, crashTime + 0.3);
+    crunchOsc.connect(crunchGain);
+    crunchGain.connect(inputNode);
+    crunchOsc.start(crashTime + 0.05);
+    crunchOsc.stop(crashTime + 0.3);
   }
 
   // ==========================================

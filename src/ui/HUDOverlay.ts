@@ -128,6 +128,28 @@ export class HUDOverlay {
         </div>
       </div>
 
+      <!-- 浮动容错警报横幅 -->
+      <div id="hud-alert-banner" style="
+        position: absolute;
+        top: 70px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(180, 20, 20, 0.92);
+        border: 2px solid #ff4444;
+        box-shadow: 0 0 30px rgba(255, 50, 50, 0.6);
+        color: #fff;
+        padding: 10px 24px;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: bold;
+        text-align: center;
+        letter-spacing: 0.5px;
+        z-index: 40;
+        display: none;
+        pointer-events: none;
+        transition: all 0.3s ease;
+      "></div>
+
       <style>
         @media (max-width: 768px) {
           .hud-top-bar {
@@ -191,19 +213,31 @@ export class HUDOverlay {
       }
     }
 
-    // 更新防御工事耐久
+    // 更新防御工事耐久与容错状态
     const doorEl = document.getElementById('barricade-door');
     if (doorEl) {
       const b = Math.max(0, this.enemyManager.getDoorBoards());
-      doorEl.innerText = `(木板: ${b}/3)`;
-      doorEl.style.color = b <= 1 ? '#ff2222' : '#ffaa00';
+      const turretReady = this.enemyManager.isDoorTurretAvailable();
+      if (b > 0) {
+        doorEl.innerText = `(木板: ${b}/3 | ${turretReady ? '机枪备战' : '机枪耗尽'})`;
+        doorEl.style.color = b <= 1 ? '#ffaa00' : '#00ff88';
+      } else {
+        doorEl.innerText = turretReady ? `(木板全毁 [机枪就绪])` : `(木板全毁 [机枪已耗尽!])`;
+        doorEl.style.color = '#ff2222';
+      }
     }
 
     const cellarEl = document.getElementById('barricade-cellar');
     if (cellarEl) {
       const h = Math.max(0, this.enemyManager.getCellarHealth());
-      cellarEl.innerText = `(${h}%)`;
-      cellarEl.style.color = h < 40 ? '#ff2222' : '#00ff88';
+      const trapReady = this.enemyManager.isCellarTrapAvailable();
+      if (h > 0) {
+        cellarEl.innerText = `(${h}% | ${trapReady ? '陷阱就绪' : '陷阱已消耗'})`;
+        cellarEl.style.color = h < 40 ? '#ffaa00' : '#00ff88';
+      } else {
+        cellarEl.innerText = trapReady ? `(活板门毁 [陷阱就绪])` : `(活板门毁 [陷阱已消耗!])`;
+        cellarEl.style.color = '#ff2222';
+      }
     }
   }
 
@@ -221,6 +255,21 @@ export class HUDOverlay {
       transition: all 0.2s;
       text-align: center;
     `;
+  }
+
+  private showAlertBanner(message: string): void {
+    const banner = document.getElementById('hud-alert-banner');
+    if (!banner) return;
+    banner.innerText = message;
+    banner.style.display = 'block';
+    banner.style.opacity = '1';
+
+    setTimeout(() => {
+      banner.style.opacity = '0';
+      setTimeout(() => {
+        banner.style.display = 'none';
+      }, 300);
+    }, 3500);
   }
 
   private bindDomListeners(): void {
@@ -263,11 +312,32 @@ export class HUDOverlay {
       this.updateAmmoDisplay();
     });
 
-    eventBus.on('WEAPON_RELOAD_START', () => {
+    eventBus.on('WEAPON_RELOAD_START', (data) => {
       const hint = document.getElementById('hud-reload-hint');
       if (hint) {
-        hint.innerText = '⏳ 正在装弹...';
+        const cur = data ? data.currentAmmo : this.ammo;
+        hint.innerText = `⏳ 逐发装填 (${cur}/8)... [点击可打断]`;
         hint.style.color = '#ffaa00';
+      }
+    });
+
+    eventBus.on('WEAPON_SHELL_INSERTED', ({ ammo, maxAmmo }) => {
+      this.ammo = ammo;
+      this.updateAmmoDisplay();
+      const hint = document.getElementById('hud-reload-hint');
+      if (hint) {
+        hint.innerText = `⏳ 压入弹药 (${ammo}/${maxAmmo})... [左键随时开火打断]`;
+        hint.style.color = '#ffaa00';
+      }
+    });
+
+    eventBus.on('WEAPON_RELOAD_INTERRUPTED', (ammo) => {
+      this.ammo = ammo;
+      this.updateAmmoDisplay();
+      const hint = document.getElementById('hud-reload-hint');
+      if (hint) {
+        hint.innerText = '⚡ 装弹打断已开火';
+        hint.style.color = '#00ff88';
       }
     });
 
@@ -279,6 +349,10 @@ export class HUDOverlay {
         hint.innerText = '轻触屏幕开火';
         hint.style.color = '#888';
       }
+    });
+
+    eventBus.on('FAULT_TOLERANCE_TRIGGERED', ({ message }) => {
+      this.showAlertBanner(message);
     });
 
     eventBus.on('WAVE_STARTED', (wave) => {
@@ -310,7 +384,7 @@ export class HUDOverlay {
     if (!nameEl || !ammoContainer) return;
 
     if (this.currentWeapon === 'shotgun') {
-      nameEl.innerText = '霰弹枪';
+      nameEl.innerText = '泵动式霰弹枪';
       nameEl.style.color = '#ffaa00';
       ammoContainer.style.display = 'block';
     } else {

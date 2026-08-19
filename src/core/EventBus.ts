@@ -7,7 +7,9 @@ export type GameEventMap = {
   // 战斗与武器事件
   WEAPON_SWITCHED: (weaponType: 'shotgun' | 'knife') => void;
   WEAPON_FIRED: (data: { weapon: 'shotgun' | 'knife'; remainingAmmo: number }) => void;
-  WEAPON_RELOAD_START: () => void;
+  WEAPON_RELOAD_START: (data?: { currentAmmo: number; maxAmmo: number }) => void;
+  WEAPON_SHELL_INSERTED: (data: { ammo: number; maxAmmo: number }) => void;
+  WEAPON_RELOAD_INTERRUPTED: (ammo: number) => void;
   WEAPON_RELOAD_COMPLETE: (ammo: number) => void;
   NOISE_PRODUCED: (intensity: number) => void;
 
@@ -22,6 +24,12 @@ export type GameEventMap = {
   ENEMY_DAMAGED: (data: { id: string; damage: number }) => void;
   ENEMY_KILLED: (data: { id: string; type: string; sceneId: string }) => void;
   BARRICADE_DAMAGED: (data: { sceneId: string; currentHealth: number; maxHealth: number }) => void;
+  FAULT_TOLERANCE_TRIGGERED: (data: {
+    type: 'turret' | 'trap';
+    sceneId: 'door' | 'cellar';
+    message: string;
+    clearedCount: number;
+  }) => void;
 
   // 波次与游戏流程
   WAVE_STARTED: (waveNumber: number) => void;

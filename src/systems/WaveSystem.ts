@@ -57,10 +57,12 @@ export class WaveSystem {
     if (this.enemyQueue.length > 0) {
       this.spawnTimerMs += deltaMs;
 
-      // 核心公式: 噪音压缩刷新间隔
+      // 核心公式: 基础刷怪速度 (随波次轻微提速) + 噪音压缩刷新间隔
+      const waveSpeedFactor = Math.min(1.35, 1.0 + (this.currentWave - 1) * 0.06);
+      const baseInterval = GAME_CONFIG.WAVE.BASE_INTERVAL_MS / waveSpeedFactor;
       const dynamicInterval = Math.max(
         GAME_CONFIG.WAVE.MIN_INTERVAL_MS,
-        GAME_CONFIG.WAVE.BASE_INTERVAL_MS / (1.0 + 1.6 * this.noiseLevel)
+        baseInterval / (1.0 + 1.6 * this.noiseLevel)
       );
 
       if (this.spawnTimerMs >= dynamicInterval) {

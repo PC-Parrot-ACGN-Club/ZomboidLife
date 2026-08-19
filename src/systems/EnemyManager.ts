@@ -24,6 +24,8 @@ export class EnemyManager {
   private doorBoards: number = GAME_CONFIG.BARRICADES.DOOR_MAX_BOARDS;
   private windowHealth: number = GAME_CONFIG.BARRICADES.WINDOW_MAX_HEALTH;
   private cellarHealth: number = GAME_CONFIG.BARRICADES.CELLAR_MAX_HEALTH;
+  private doorTurretAvailable: boolean = true;
+  private cellarTrapAvailable: boolean = true;
   private isGameOver: boolean = false;
   private mimicSoundTimerMs: number = 0;
 
@@ -36,6 +38,8 @@ export class EnemyManager {
     this.doorBoards = GAME_CONFIG.BARRICADES.DOOR_MAX_BOARDS;
     this.windowHealth = GAME_CONFIG.BARRICADES.WINDOW_MAX_HEALTH;
     this.cellarHealth = GAME_CONFIG.BARRICADES.CELLAR_MAX_HEALTH;
+    this.doorTurretAvailable = true;
+    this.cellarTrapAvailable = true;
     this.isGameOver = false;
     this.mimicSoundTimerMs = 0;
   }
@@ -44,23 +48,23 @@ export class EnemyManager {
     const id = `enemy_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     let sceneId: SceneType = 'door';
     let maxHealth = 100;
-    let stageDurationMs = 3000;
+    let stageDurationMs = 2400;
     let maxStage = 2;
 
     if (type === 'walker') {
       sceneId = GAME_CONFIG.SCENES.DOOR;
       maxHealth = GAME_CONFIG.ENEMIES.WALKER.MAX_HEALTH;
-      stageDurationMs = 2800;
+      stageDurationMs = 2400; // 略微提速
       maxStage = 2;
     } else if (type === 'laugher') {
       sceneId = GAME_CONFIG.SCENES.WINDOW;
       maxHealth = GAME_CONFIG.ENEMIES.LAUGHER.MAX_HEALTH;
-      stageDurationMs = 2000;
+      stageDurationMs = 1700; // 略微提速
       maxStage = 1;
     } else if (type === 'mimic') {
       sceneId = GAME_CONFIG.SCENES.CELLAR;
       maxHealth = GAME_CONFIG.ENEMIES.MIMIC.MAX_HEALTH;
-      stageDurationMs = 2400;
+      stageDurationMs = 2100; // 略微提速
       maxStage = 2;
     }
 
@@ -136,20 +140,29 @@ export class EnemyManager {
     enemy.attackTimerMs += deltaMs;
 
     if (enemy.type === 'walker') {
-      // 行者每 2.5 秒拆除一块木板
       const interval = GAME_CONFIG.ENEMIES.WALKER.ATTACK_INTERVAL_MS;
       if (enemy.attackTimerMs >= interval) {
         enemy.attackTimerMs = 0;
-        this.doorBoards--;
-        audioManager.playDoorWoodHit(0.0);
-        eventBus.emit('BARRICADE_DAMAGED', {
-          sceneId: 'door',
-          currentHealth: Math.max(0, this.doorBoards),
-          maxHealth: GAME_CONFIG.BARRICADES.DOOR_MAX_BOARDS,
-        });
 
-        if (this.doorBoards < 0) {
-          this.triggerGameOver('正门木板全毁，行者冲入！');
+        if (this.doorBoards > 0) {
+          // 正在拆除木板
+          this.doorBoards--;
+          audioManager.playDoorWoodHit(0.0);
+          eventBus.emit('BARRICADE_DAMAGED', {
+            sceneId: 'door',
+            currentHealth: Math.max(0, this.doorBoards),
+            maxHealth: GAME_CONFIG.BARRICADES.DOOR_MAX_BOARDS,
+          });
+
+          // 正门木板被彻底攻破！检查容错机制
+          if (this.doorBoards === 0) {
+            if (this.doorTurretAvailable) {
+              this.triggerDoorTurretFaultTolerance();
+            }
+          }
+        } else {
+          // 木板已全毁且机枪已耗尽，怪物直接冲入
+          this.triggerGameOver('正门木板全毁且机枪耗尽，行者冲入室内！');
         }
       }
     } else if (enemy.type === 'laugher') {
@@ -161,23 +174,90 @@ export class EnemyManager {
         this.triggerGameOver('笑者破窗而入！');
       }
     } else if (enemy.type === 'mimic') {
-      // 拟态者猛击活板门
       const interval = GAME_CONFIG.ENEMIES.MIMIC.ATTACK_INTERVAL_MS;
       if (enemy.attackTimerMs >= interval) {
         enemy.attackTimerMs = 0;
-        this.cellarHealth -= 35;
-        audioManager.playCellarLadderSound(-0.75);
-        eventBus.emit('BARRICADE_DAMAGED', {
-          sceneId: 'cellar',
-          currentHealth: Math.max(0, this.cellarHealth),
-          maxHealth: GAME_CONFIG.BARRICADES.CELLAR_MAX_HEALTH,
-        });
 
-        if (this.cellarHealth <= 0) {
-          this.triggerGameOver('活板门被撞开，拟态者爬出！');
+        if (this.cellarHealth > 0) {
+          // 猛击活板门
+          this.cellarHealth = Math.max(0, this.cellarHealth - 35);
+          audioManager.playCellarLadderSound(-0.75);
+          eventBus.emit('BARRICADE_DAMAGED', {
+            sceneId: 'cellar',
+            currentHealth: this.cellarHealth,
+            maxHealth: GAME_CONFIG.BARRICADES.CELLAR_MAX_HEALTH,
+          });
+
+          // 活板门被彻底攻破！检查容错机制
+          if (this.cellarHealth === 0) {
+            if (this.cellarTrapAvailable) {
+              this.triggerCellarTrapFaultTolerance();
+            }
+          }
+        } else {
+          // 活板门已被破坏且陷阱已消耗，怪物直接爬出
+          this.triggerGameOver('活板门被撞开且陷阱已消耗，拟态者爬入室内！');
         }
       }
     }
+  }
+
+  /**
+   * 触发正门自动机枪容错机制：清除正门路上所有僵尸，机枪弹药耗尽
+   */
+  private triggerDoorTurretFaultTolerance(): void {
+    this.doorTurretAvailable = false;
+    const doorEnemies = Array.from(this.enemies.values()).filter(
+      (e) => e.sceneId === 'door' && !e.isDead
+    );
+
+    for (const e of doorEnemies) {
+      e.isDead = true;
+      this.enemies.delete(e.id);
+      eventBus.emit('ENEMY_KILLED', {
+        id: e.id,
+        type: e.type,
+        sceneId: e.sceneId,
+      });
+    }
+
+    audioManager.playTurretFire();
+    console.log(`[Fault Tolerance] 室内自动机枪开火！清除了正门 ${doorEnemies.length} 只僵尸！弹药耗尽`);
+    eventBus.emit('FAULT_TOLERANCE_TRIGGERED', {
+      type: 'turret',
+      sceneId: 'door',
+      message: '🚨 室内自动机枪开火！正门僵尸全灭！(机枪弹药已耗尽)',
+      clearedCount: doorEnemies.length,
+    });
+  }
+
+  /**
+   * 触发地窖陷阱容错机制：清除梯子上所有怪，陷阱消耗
+   */
+  private triggerCellarTrapFaultTolerance(): void {
+    this.cellarTrapAvailable = false;
+    const cellarEnemies = Array.from(this.enemies.values()).filter(
+      (e) => e.sceneId === 'cellar' && !e.isDead
+    );
+
+    for (const e of cellarEnemies) {
+      e.isDead = true;
+      this.enemies.delete(e.id);
+      eventBus.emit('ENEMY_KILLED', {
+        id: e.id,
+        type: e.type,
+        sceneId: e.sceneId,
+      });
+    }
+
+    audioManager.playTrapTrigger();
+    console.log(`[Fault Tolerance] 预设陷阱触发！砸死地窖梯子上 ${cellarEnemies.length} 只怪物！陷阱已消耗`);
+    eventBus.emit('FAULT_TOLERANCE_TRIGGERED', {
+      type: 'trap',
+      sceneId: 'cellar',
+      message: '⚙️ 预设陷阱触发！落石砸死梯子上所有怪物！(陷阱已消耗)',
+      clearedCount: cellarEnemies.length,
+    });
   }
 
   private updateMimicSound(deltaMs: number): void {
@@ -259,6 +339,14 @@ export class EnemyManager {
 
   public getCellarHealth(): number {
     return this.cellarHealth;
+  }
+
+  public isDoorTurretAvailable(): boolean {
+    return this.doorTurretAvailable;
+  }
+
+  public isCellarTrapAvailable(): boolean {
+    return this.cellarTrapAvailable;
   }
 
   private triggerGameOver(reason: string): void {

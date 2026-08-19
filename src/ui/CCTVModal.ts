@@ -162,8 +162,22 @@ export class CCTVModal {
     if (!el) return;
 
     const enemies = this.enemyManager.getEnemiesForScene(sceneId);
+    let defenseSubText = '';
+    if (sceneId === 'door') {
+      const b = this.enemyManager.getDoorBoards();
+      const t = this.enemyManager.isDoorTurretAvailable();
+      defenseSubText = `<div style="font-size: 11px; margin-top: 4px; color: ${b > 0 ? '#ffaa00' : '#ff3333'};">木板: ${b}/3 | 室内机枪: ${t ? '✅就绪' : '❌已耗尽'}</div>`;
+    } else if (sceneId === 'cellar') {
+      const h = this.enemyManager.getCellarHealth();
+      const tr = this.enemyManager.isCellarTrapAvailable();
+      defenseSubText = `<div style="font-size: 11px; margin-top: 4px; color: ${h > 0 ? '#00ff88' : '#ff3333'};">活板门: ${h}% | 机关陷阱: ${tr ? '✅就绪' : '❌已消耗'}</div>`;
+    }
+
     if (enemies.length === 0) {
-      el.innerHTML = `<span style="color: #00aa44;">[ ● 无生物活动 / 安全 ]</span>`;
+      el.innerHTML = `
+        <span style="color: #00aa44;">[ ● 无生物活动 / 安全 ]</span>
+        ${defenseSubText}
+      `;
       el.style.background = 'transparent';
       return;
     }
@@ -184,6 +198,7 @@ export class CCTVModal {
         <div style="font-size: 20px; font-weight: bold; margin-bottom: 4px;">⚠️ [${enemy.type.toUpperCase()}]</div>
         <div style="font-size: 14px;">状态: <strong>${stageText}</strong></div>
         <div style="font-size: 12px; color: #88ffaa; margin-top: 4px;">HP: ${enemy.health} / ${enemy.maxHealth}</div>
+        ${defenseSubText}
       </div>
     `;
     el.style.background = 'rgba(255, 50, 50, 0.12)';

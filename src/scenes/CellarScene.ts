@@ -8,9 +8,11 @@ export class CellarScene extends BaseScene {
   public readonly sceneId: SceneType = GAME_CONFIG.SCENES.CELLAR;
   private enemyVisualContainer!: Container;
   private trapdoorVisual!: Graphics;
+  private trapMechanismVisual!: Graphics;
   private vfxContainer!: Graphics;
   private enemyManager: EnemyManager;
   private shakeOffset: number = 0;
+  private trapCrushTimer: number = 0;
 
   constructor(enemyManager: EnemyManager) {
     super();
@@ -51,24 +53,76 @@ export class CellarScene extends BaseScene {
     this.enemyVisualContainer = new Container();
     this.addChild(this.enemyVisualContainer);
 
-    // 5. 活板门盖与铁链
+    // 5. 陷阱机关装置 (悬挂在梯口上方两侧的重石与尖刺机关)
+    this.trapMechanismVisual = new Graphics();
+    this.addChild(this.trapMechanismVisual);
+    this.renderTrapMechanism();
+
+    // 6. 活板门盖与铁链
     this.trapdoorVisual = new Graphics();
     this.addChild(this.trapdoorVisual);
     this.renderTrapdoor(100);
 
-    // 6. 特效图层
+    // 7. 特效图层
     this.vfxContainer = new Graphics();
     this.addChild(this.vfxContainer);
 
     this.bindEvents();
   }
 
-  public renderTrapdoor(_health: number): void {
+  public renderTrapMechanism(): void {
+    this.trapMechanismVisual.clear();
+    const cx = GAME_CONFIG.CANVAS_WIDTH / 2;
+    const isReady = this.enemyManager.isCellarTrapAvailable();
+
+    if (isReady) {
+      // 预设重石刺木机关 (蓄势待发)
+      this.trapMechanismVisual.moveTo(cx - 150, 220);
+      this.trapMechanismVisual.lineTo(cx - 150, 320);
+      this.trapMechanismVisual.moveTo(cx + 150, 220);
+      this.trapMechanismVisual.lineTo(cx + 150, 320);
+      this.trapMechanismVisual.stroke({ width: 4, color: 0x666666 });
+
+      // 吊石重锤
+      this.trapMechanismVisual.rect(cx - 170, 300, 40, 40);
+      this.trapMechanismVisual.rect(cx + 130, 300, 40, 40);
+      this.trapMechanismVisual.fill({ color: 0x3d3530 });
+      this.trapMechanismVisual.stroke({ width: 2, color: 0x00ff88 });
+    } else {
+      // 机关已断绳触发，仅留断链
+      this.trapMechanismVisual.moveTo(cx - 150, 220);
+      this.trapMechanismVisual.lineTo(cx - 150, 260);
+      this.trapMechanismVisual.moveTo(cx + 150, 220);
+      this.trapMechanismVisual.lineTo(cx + 150, 260);
+      this.trapMechanismVisual.stroke({ width: 3, color: 0x444444 });
+    }
+  }
+
+  public renderTrapdoor(health: number): void {
     this.trapdoorVisual.clear();
     const cx = GAME_CONFIG.CANVAS_WIDTH / 2 + this.shakeOffset;
     const cy = 350;
 
-    // 活板门木盖板
+    if (health <= 0) {
+      // 活板门彻底被砸烂敞开
+      this.trapdoorVisual.moveTo(cx - 200, cy);
+      this.trapdoorVisual.lineTo(cx - 180, cy - 70);
+      this.trapdoorVisual.lineTo(cx - 130, cy - 80);
+      this.trapdoorVisual.lineTo(cx - 120, cy);
+      this.trapdoorVisual.fill({ color: 0x2b1c10 });
+      this.trapdoorVisual.stroke({ width: 3, color: 0x150d06 });
+
+      // 右侧残破碎板
+      this.trapdoorVisual.moveTo(cx + 120, cy);
+      this.trapdoorVisual.lineTo(cx + 140, cy - 65);
+      this.trapdoorVisual.lineTo(cx + 190, cy - 75);
+      this.trapdoorVisual.lineTo(cx + 200, cy);
+      this.trapdoorVisual.fill({ color: 0x2b1c10 });
+      this.trapdoorVisual.stroke({ width: 3, color: 0x150d06 });
+      return;
+    }
+
+    // 正常活板门木盖板
     this.trapdoorVisual.roundRect(cx - 200, cy, 400, 56, 4);
     this.trapdoorVisual.fill({ color: 0x4a321e });
     this.trapdoorVisual.stroke({ width: 4, color: 0x2b1c10 });
@@ -78,8 +132,20 @@ export class CellarScene extends BaseScene {
     this.trapdoorVisual.fill({ color: 0x888888 });
   }
 
-  public override update(_deltaMs: number): void {
+  public override update(deltaMs: number): void {
     if (!this.isCurrentActive) return;
+
+    // 刷新机关状态
+    this.renderTrapMechanism();
+
+    // 更新陷阱砸落动画
+    if (this.trapCrushTimer > 0) {
+      this.trapCrushTimer -= deltaMs;
+      this.renderTrapCrushVfx();
+      if (this.trapCrushTimer <= 0) {
+        this.vfxContainer.clear();
+      }
+    }
 
     this.enemyVisualContainer.removeChildren();
     const enemies = this.enemyManager.getEnemiesForScene('cellar');
@@ -119,16 +185,51 @@ export class CellarScene extends BaseScene {
     this.renderTrapdoor(this.enemyManager.getCellarHealth());
   }
 
+  private renderTrapCrushVfx(): void {
+    this.vfxContainer.clear();
+    const cx = GAME_CONFIG.CANVAS_WIDTH / 2;
+
+    // 巨型落石/尖刺重锤碾压砸过梯道
+    const progress = 1.0 - this.trapCrushTimer / 900;
+    const crushY = 320 + progress * 240;
+
+    // 巨石碾压块
+    this.vfxContainer.roundRect(cx - 110, crushY, 220, 70, 8);
+    this.vfxContainer.fill({ color: 0x221e1a, alpha: 0.95 });
+    this.vfxContainer.stroke({ width: 5, color: 0xff3333 });
+
+    // 碾碎血溅特效
+    for (let i = 0; i < 6; i++) {
+      const sx = cx + (Math.random() - 0.5) * 180;
+      const sy = crushY + (Math.random() - 0.5) * 60;
+      this.vfxContainer.circle(sx, sy, 14 + Math.random() * 16);
+      this.vfxContainer.fill({ color: 0x990000, alpha: 0.75 });
+    }
+  }
+
   public showMuzzleFlash(): void {
     this.vfxContainer.clear();
     this.vfxContainer.circle(GAME_CONFIG.CANVAS_WIDTH / 2, GAME_CONFIG.CANVAS_HEIGHT / 2, 280);
     this.vfxContainer.fill({ color: 0xffdd88, alpha: 0.35 });
     setTimeout(() => {
-      this.vfxContainer.clear();
+      if (this.trapCrushTimer <= 0) {
+        this.vfxContainer.clear();
+      }
     }, 60);
   }
 
+  public playTrapCrushAnimation(): void {
+    this.trapCrushTimer = 900;
+  }
+
   private bindEvents(): void {
+    eventBus.on('FAULT_TOLERANCE_TRIGGERED', (data) => {
+      if (data.sceneId === 'cellar') {
+        this.playTrapCrushAnimation();
+        this.renderTrapMechanism();
+      }
+    });
+
     eventBus.on('WEAPON_FIRED', (data) => {
       if (this.isCurrentActive && data.weapon === 'shotgun') {
         this.showMuzzleFlash();
