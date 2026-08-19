@@ -3,9 +3,24 @@ export class AudioManager {
   private isMuted: boolean = false;
   private masterGain: GainNode | null = null;
 
+  // 环境音 (Ambient Drone) 节点群
+  private ambientGain: GainNode | null = null;
+  private droneOsc1: OscillatorNode | null = null;
+  private droneOsc2: OscillatorNode | null = null;
+  private noiseNode: AudioNode | null = null;
+  private noiseLfo: OscillatorNode | null = null;
+  private isAmbientPlaying: boolean = false;
+
+  // 心跳与紧张度
+  private heartbeatTimerMs: number = 0;
+  private heartbeatIntervalMs: number = 1200;
+  private tensionLevel: number = 0; // 0.0 (平静) ~ 1.0 (极度危险)
+
   public init(): void {
     if (this.ctx) return;
-    const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioCtxClass =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new AudioCtxClass();
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.setValueAtTime(0.7, this.ctx.currentTime);
@@ -21,7 +36,10 @@ export class AudioManager {
   /**
    * 创建带声相 (Pan) 和滤波的音频输出链
    */
-  private createPannedChain(pan: number = 0, lowPassFreq?: number): { inputNode: AudioNode; outputNode: AudioNode } {
+  private createPannedChain(
+    pan: number = 0,
+    lowPassFreq?: number
+  ): { inputNode: AudioNode; outputNode: AudioNode } {
     if (!this.ctx || !this.masterGain) {
       throw new Error('AudioContext 未初始化');
     }
@@ -56,6 +74,197 @@ export class AudioManager {
 
     return { inputNode: gainNode, outputNode: this.masterGain };
   }
+
+  // ==========================================
+  // 令人不安的背景暗流与环境音 (Ambient Drone & Horror Atmosphere)
+  // ==========================================
+
+  /**
+   * 启动恐怖背景暗流音效 (次低频双耳差频暗音 + 阴冷风声呼吸滤波)
+   */
+  public startAmbientDrone(): void {
+    if (!this.ctx || !this.masterGain || this.isAmbientPlaying) return;
+    this.resume();
+
+    this.isAmbientPlaying = true;
+    const t = this.ctx.currentTime;
+
+    // 总环境音增益节点 (柔和淡入)
+    this.ambientGain = this.ctx.createGain();
+    this.ambientGain.gain.setValueAtTime(0.01, t);
+    this.ambientGain.gain.exponentialRampToValueAtTime(0.35, t + 3.0);
+    this.ambientGain.connect(this.masterGain);
+
+    // 1. 低频不协和差频震荡 (Infrasound / Dark Sub-Drone)
+    // 50Hz 与 53.5Hz 的微小音分偏差会产生约 3.5Hz 的令人心悸的不安定拍频 (Acoustic Beating)
+    this.droneOsc1 = this.ctx.createOscillator();
+    this.droneOsc2 = this.ctx.createOscillator();
+    const droneFilter = this.ctx.createBiquadFilter();
+
+    this.droneOsc1.type = 'sawtooth';
+    this.droneOsc1.frequency.setValueAtTime(50, t);
+
+    this.droneOsc2.type = 'triangle';
+    this.droneOsc2.frequency.setValueAtTime(53.5, t);
+
+    droneFilter.type = 'lowpass';
+    droneFilter.frequency.setValueAtTime(95, t); // 滤除高频，只保留压抑的次低频轰鸣
+
+    const droneSubGain = this.ctx.createGain();
+    droneSubGain.gain.setValueAtTime(0.6, t);
+
+    this.droneOsc1.connect(droneFilter);
+    this.droneOsc2.connect(droneFilter);
+    droneFilter.connect(droneSubGain);
+    droneSubGain.connect(this.ambientGain);
+
+    this.droneOsc1.start(t);
+    this.droneOsc2.start(t);
+
+    // 2. 阴冷风噪与空旷房间底噪 (Filtered Wind Noise + LFO Breathing)
+    const bufferSize = this.ctx.sampleRate * 2.0;
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noiseSource = this.ctx.createBufferSource();
+    noiseSource.buffer = noiseBuffer;
+    noiseSource.loop = true;
+
+    const windFilter = this.ctx.createBiquadFilter();
+    windFilter.type = 'bandpass';
+    windFilter.frequency.setValueAtTime(320, t);
+    windFilter.Q.setValueAtTime(3.0, t);
+
+    // LFO 缓慢调制风声的中心频率，营造阴风穿堂的不安感
+    this.noiseLfo = this.ctx.createOscillator();
+    const lfoGain = this.ctx.createGain();
+    this.noiseLfo.type = 'sine';
+    this.noiseLfo.frequency.setValueAtTime(0.2, t); // 每 5 秒一个循环
+    lfoGain.gain.setValueAtTime(140, t);
+
+    this.noiseLfo.connect(lfoGain);
+    lfoGain.connect(windFilter.frequency);
+
+    const windGain = this.ctx.createGain();
+    windGain.gain.setValueAtTime(0.18, t);
+
+    noiseSource.connect(windFilter);
+    windFilter.connect(windGain);
+    windGain.connect(this.ambientGain);
+
+    noiseSource.start(t);
+    this.noiseLfo.start(t);
+    this.noiseNode = noiseSource;
+  }
+
+  /**
+   * 停止背景环境音 (淡出)
+   */
+  public stopAmbientDrone(): void {
+    if (!this.ctx || !this.ambientGain || !this.isAmbientPlaying) return;
+
+    const t = this.ctx.currentTime;
+    this.ambientGain.gain.linearRampToValueAtTime(0.001, t + 1.0);
+
+    setTimeout(() => {
+      try {
+        this.droneOsc1?.stop();
+        this.droneOsc2?.stop();
+        this.noiseLfo?.stop();
+        this.droneOsc1?.disconnect();
+        this.droneOsc2?.disconnect();
+        this.noiseNode?.disconnect();
+        this.noiseLfo?.disconnect();
+        this.ambientGain?.disconnect();
+      } catch {
+        // ignore already stopped nodes
+      }
+      this.isAmbientPlaying = false;
+      this.droneOsc1 = null;
+      this.droneOsc2 = null;
+      this.noiseNode = null;
+      this.noiseLfo = null;
+      this.ambientGain = null;
+    }, 1050);
+  }
+
+  /**
+   * 动态调节压迫感 / 紧张度等级 (0.0 ~ 1.0)
+   */
+  public setTensionLevel(level: number): void {
+    this.tensionLevel = Math.max(0, Math.min(1, level));
+
+    if (this.ctx && this.ambientGain) {
+      // 随着局势越危险，环境低频嗡鸣音量与压迫感随之增强
+      const targetGain = 0.35 + this.tensionLevel * 0.45;
+      this.ambientGain.gain.linearRampToValueAtTime(targetGain, this.ctx.currentTime + 0.5);
+    }
+
+    // 心跳间隔随紧张度加速 (1300ms -> 450ms)
+    this.heartbeatIntervalMs = 1300 - this.tensionLevel * 850;
+  }
+
+  /**
+   * 逐帧更新心跳节拍与随机惊悚环境异响
+   */
+  public updateAmbientLoop(deltaMs: number): void {
+    if (!this.ctx || !this.isAmbientPlaying) return;
+
+    // 当局势有危险 (tension > 0.25) 时激活心跳音效
+    if (this.tensionLevel > 0.25) {
+      this.heartbeatTimerMs += deltaMs;
+      if (this.heartbeatTimerMs >= this.heartbeatIntervalMs) {
+        this.heartbeatTimerMs = 0;
+        this.playHeartbeatThud();
+      }
+    } else {
+      this.heartbeatTimerMs = 0;
+    }
+  }
+
+  /**
+   * 沉闷压抑的心跳声 ("咚-咚" 双脉冲低频震荡)
+   */
+  public playHeartbeatThud(): void {
+    if (!this.ctx || this.isMuted) return;
+    const t = this.ctx.currentTime;
+    const { inputNode } = this.createPannedChain(0.0, 150);
+
+    // 第一声心跳 (Lub)
+    const osc1 = this.ctx.createOscillator();
+    const gain1 = this.ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(65, t);
+    osc1.frequency.exponentialRampToValueAtTime(30, t + 0.12);
+    gain1.gain.setValueAtTime(0.5 + this.tensionLevel * 0.4, t);
+    gain1.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+
+    osc1.connect(gain1);
+    gain1.connect(inputNode);
+    osc1.start(t);
+    osc1.stop(t + 0.12);
+
+    // 第二声心跳 (Dub - 稍弱，间隔 140ms)
+    const osc2 = this.ctx.createOscillator();
+    const gain2 = this.ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(55, t + 0.14);
+    osc2.frequency.exponentialRampToValueAtTime(25, t + 0.26);
+    gain2.gain.setValueAtTime(0.35 + this.tensionLevel * 0.3, t + 0.14);
+    gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.26);
+
+    osc2.connect(gain2);
+    gain2.connect(inputNode);
+    osc2.start(t + 0.14);
+    osc2.stop(t + 0.26);
+  }
+
+  // ==========================================
+  // 武器与战斗音效
+  // ==========================================
 
   /**
    * 霰弹枪开火声 (低频轰鸣 + 白噪音爆破)
@@ -173,6 +382,10 @@ export class AudioManager {
     osc.start(t);
     osc.stop(t + 0.18);
   }
+
+  // ==========================================
+  // 场景与环境声效 (带立体声定位)
+  // ==========================================
 
   /**
    * 正门撞击/木板拆裂声 (正中方位 pan = 0.0)

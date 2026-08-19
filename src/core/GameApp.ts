@@ -8,6 +8,7 @@ import { WaveSystem } from '@/systems/WaveSystem';
 import { CCTVModal } from '@/ui/CCTVModal';
 import { GameOverModal } from '@/ui/GameOverModal';
 import { StartScreen } from '@/ui/StartScreen';
+import { audioManager } from '@/audio/AudioManager';
 import { eventBus } from './EventBus';
 
 export class GameApp {
@@ -68,6 +69,7 @@ export class GameApp {
     // 4. 开始界面引导
     this.startScreen = new StartScreen(() => {
       this.isRunning = true;
+      audioManager.startAmbientDrone();
     });
 
     // 5. 事件总线绑定
@@ -90,9 +92,32 @@ export class GameApp {
     this.sceneManager.update(deltaMs);
     this.hud.update();
 
+    // 动态计算全场危机紧张度并调节环境音
+    this.updateAudioTension(deltaMs);
+
     // 处理后坐力震屏偏移
     const offset = this.weaponSystem.getRecoilOffset();
     this.app.stage.position.set(offset.x, offset.y);
+  }
+
+  private updateAudioTension(deltaMs: number): void {
+    const activeEnemies = this.enemyManager.getAllActiveEnemies();
+    let tension = 0;
+
+    // 若有怪物正在破门/破窗/顶门，紧张度瞬间拉满
+    const isUnderAttack = activeEnemies.some((e) => e.stage === e.maxStage);
+    if (isUnderAttack) {
+      tension += 0.65;
+    } else if (activeEnemies.some((e) => e.stage >= 1)) {
+      tension += 0.35;
+    }
+
+    // 枪声噪音也会拉高紧张度
+    const noise = this.waveSystem.getNoiseLevel();
+    tension += Math.min(0.4, noise * 0.25);
+
+    audioManager.setTensionLevel(tension);
+    audioManager.updateAmbientLoop(deltaMs);
   }
 
   private bindEvents(): void {
@@ -103,6 +128,7 @@ export class GameApp {
     });
 
     eventBus.on('GAME_OVER', () => {
+      audioManager.stopAmbientDrone();
       this.gameOverModal.show({
         survivalTime: this.waveSystem.getSurvivalSeconds(),
         kills: this.waveSystem.getTotalKills(),
@@ -112,6 +138,7 @@ export class GameApp {
 
     eventBus.on('GAME_RESTART', () => {
       this.isRunning = true;
+      audioManager.startAmbientDrone();
     });
   }
 
