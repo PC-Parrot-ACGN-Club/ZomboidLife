@@ -77,7 +77,6 @@ export class WeaponSystem {
       if (this.isReloading) return;
 
       if (this.ammo <= 0) {
-        // 没子弹自动提示/尝试装弹
         this.startReload();
         return;
       }
@@ -129,33 +128,36 @@ export class WeaponSystem {
   }
 
   private bindInputs(): void {
-    // 鼠标右键切换武器
+    // 鼠标右键切换武器 (PC)
     window.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       this.switchWeapon();
     });
 
-    // 鼠标左键射击/挥砍
+    // 鼠标左键射击/挥砍 (PC)
     window.addEventListener('mousedown', (e) => {
       if (e.button === 0) {
-        // 避免点击 UI 按钮时开火
         const target = e.target as HTMLElement;
         if (target.closest('.interactive') || target.tagName === 'BUTTON') return;
         this.attack();
       }
     });
 
-    // 键盘 R 键装弹
+    // 键盘 R 键装弹 (PC)
     window.addEventListener('keydown', (e) => {
       if (e.key.toLowerCase() === 'r') {
         this.startReload();
       }
     });
 
-    // 鼠标移到画面底部 (Y > 92% 视口高度) 自动触发装弹
+    // 鼠标移到画面底部自动装弹 (PC)
     window.addEventListener('mousemove', (e) => {
       const threshold = window.innerHeight * 0.92;
-      if (e.clientY >= threshold && this.currentWeapon === 'shotgun' && this.ammo < GAME_CONFIG.WEAPONS.SHOTGUN.MAGAZINE_SIZE) {
+      if (
+        e.clientY >= threshold &&
+        this.currentWeapon === 'shotgun' &&
+        this.ammo < GAME_CONFIG.WEAPONS.SHOTGUN.MAGAZINE_SIZE
+      ) {
         this.startReload();
       }
     });
@@ -164,6 +166,19 @@ export class WeaponSystem {
   private bindEvents(): void {
     eventBus.on('SCENE_CHANGED', (sceneId) => {
       this.currentScene = sceneId;
+    });
+
+    // 移动端手势或按钮派发的动作
+    eventBus.on('TRIGGER_ATTACK', () => {
+      this.attack();
+    });
+
+    eventBus.on('TRIGGER_RELOAD', () => {
+      this.startReload();
+    });
+
+    eventBus.on('TRIGGER_WEAPON_SWITCH', () => {
+      this.switchWeapon();
     });
 
     eventBus.on('GAME_RESTART', () => {

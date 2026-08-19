@@ -18,28 +18,30 @@ export class GameOverModal {
       left: 0;
       width: 100vw;
       height: 100vh;
-      background: rgba(15, 0, 0, 0.92);
+      background: rgba(15, 0, 0, 0.94);
       z-index: 100;
       display: none;
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       color: #fff;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      overflow-y: auto;
     `;
 
     el.innerHTML = `
-      <div style="background: rgba(30, 10, 10, 0.95); border: 2px solid #ff3333; border-radius: 8px; padding: 36px 48px; text-align: center; max-width: 500px; box-shadow: 0 0 50px rgba(255, 0, 0, 0.4);">
-        <h1 style="color: #ff2222; font-size: 42px; margin-bottom: 8px; letter-spacing: 2px;">GAME OVER</h1>
-        <p style="color: #aaa; font-size: 16px; margin-bottom: 24px;">防御已被突破，你未能挺过这一夜...</p>
+      <div style="background: rgba(30, 10, 10, 0.95); border: 2px solid #ff3333; border-radius: 8px; padding: clamp(20px, 5vw, 36px); text-align: center; max-width: 480px; width: 100%; box-shadow: 0 0 50px rgba(255, 0, 0, 0.4);">
+        <h1 style="color: #ff2222; font-size: clamp(28px, 7vw, 42px); margin-bottom: 6px; letter-spacing: 2px;">GAME OVER</h1>
+        <p style="color: #aaa; font-size: clamp(13px, 3.5vw, 15px); margin-bottom: 20px;">防御已被突破，你未能挺过这一夜...</p>
 
         <!-- 本局战绩 -->
-        <div style="background: rgba(0,0,0,0.5); padding: 16px 20px; border-radius: 6px; margin-bottom: 24px; text-align: left; font-size: 15px; line-height: 1.8;">
+        <div style="background: rgba(0,0,0,0.5); padding: 14px 18px; border-radius: 6px; margin-bottom: 20px; text-align: left; font-size: clamp(13px, 3.5vw, 15px); line-height: 1.8;">
           <div>坚持波次：<span id="go-wave" style="color: #ffaa00; font-weight: bold;">第 1 波</span></div>
           <div>存活时间：<span id="go-time" style="color: #00ff88; font-weight: bold;">00:00</span></div>
           <div>击杀数量：<span id="go-kills" style="color: #44ddff; font-weight: bold;">0 只</span></div>
-          <hr style="border: 0; border-top: 1px solid #333; margin: 10px 0;">
-          <div style="font-size: 13px; color: #888;">历史最高波次：<span id="go-best-wave" style="color: #fff;">1</span></div>
+          <hr style="border: 0; border-top: 1px solid #333; margin: 8px 0;">
+          <div style="font-size: 12px; color: #888;">历史最高波次：<span id="go-best-wave" style="color: #fff;">1</span></div>
         </div>
 
         <button id="btn-restart" style="
@@ -47,11 +49,14 @@ export class GameOverModal {
           color: #fff;
           border: none;
           padding: 12px 36px;
-          font-size: 18px;
+          min-height: 48px;
+          font-size: clamp(16px, 4vw, 18px);
           font-weight: bold;
-          border-radius: 4px;
+          border-radius: 6px;
           cursor: pointer;
           transition: background 0.2s;
+          touch-action: manipulation;
+          width: 100%;
         ">重新开始 (RESTART)</button>
       </div>
     `;
@@ -59,9 +64,15 @@ export class GameOverModal {
     document.body.appendChild(el);
     this.container = el;
 
-    document.getElementById('btn-restart')?.addEventListener('click', () => {
+    const restartHandler = () => {
       this.hide();
       eventBus.emit('GAME_RESTART');
+    };
+
+    document.getElementById('btn-restart')?.addEventListener('click', restartHandler);
+    document.getElementById('btn-restart')?.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      restartHandler();
     });
   }
 

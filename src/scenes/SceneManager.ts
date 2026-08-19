@@ -20,6 +20,11 @@ export class SceneManager {
   private enemyManager: EnemyManager;
   private onCCTVClickCallback: () => void;
 
+  // 手势触摸跟踪
+  private touchStartX: number = 0;
+  private touchStartY: number = 0;
+  private touchStartTime: number = 0;
+
   constructor(rootContainer: Container, enemyManager: EnemyManager, onCCTVClick: () => void) {
     this.container = new Container();
     rootContainer.addChild(this.container);
@@ -41,7 +46,7 @@ export class SceneManager {
     this.container.addChild(door, windowScene, cellar);
 
     this.switchTo(GAME_CONFIG.SCENES.DOOR);
-    this.bindKeyboardControls();
+    this.bindControls();
   }
 
   public switchTo(sceneId: SceneType): void {
@@ -86,9 +91,9 @@ export class SceneManager {
     }
   }
 
-  private bindKeyboardControls(): void {
+  private bindControls(): void {
+    // 键盘监听 (PC 端)
     window.addEventListener('keydown', (e) => {
-      // 避免输入焦点在其他地方时冲突
       const key = e.key.toLowerCase();
       if (key === 'a' || key === 'arrowleft') {
         this.prevScene();
@@ -102,5 +107,55 @@ export class SceneManager {
         this.switchTo(GAME_CONFIG.SCENES.CELLAR);
       }
     });
+
+    // 触摸滑动与手势识别 (移动端)
+    window.addEventListener(
+      'touchstart',
+      (e) => {
+        if (e.touches.length === 1) {
+          const target = e.target as HTMLElement;
+          if (target.closest('.interactive') || target.tagName === 'BUTTON') return;
+
+          this.touchStartX = e.touches[0].clientX;
+          this.touchStartY = e.touches[0].clientY;
+          this.touchStartTime = Date.now();
+        }
+      },
+      { passive: true }
+    );
+
+    window.addEventListener(
+      'touchend',
+      (e) => {
+        if (e.changedTouches.length === 1) {
+          const target = e.target as HTMLElement;
+          if (target.closest('.interactive') || target.tagName === 'BUTTON') return;
+
+          const touchEndX = e.changedTouches[0].clientX;
+          const touchEndY = e.changedTouches[0].clientY;
+          const dx = touchEndX - this.touchStartX;
+          const dy = touchEndY - this.touchStartY;
+          const dt = Date.now() - this.touchStartTime;
+
+          // 1. 水平滑动切换视角 (左右划屏)
+          if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy)) {
+            if (dx < 0) {
+              this.nextScene();
+            } else {
+              this.prevScene();
+            }
+          }
+          // 2. 向下滑动快速装弹 (下拉划屏)
+          else if (dy > 45 && Math.abs(dy) > Math.abs(dx)) {
+            eventBus.emit('TRIGGER_RELOAD');
+          }
+          // 3. 原地轻点开火 (Tap 攻击)
+          else if (Math.abs(dx) < 18 && Math.abs(dy) < 18 && dt < 350) {
+            eventBus.emit('TRIGGER_ATTACK');
+          }
+        }
+      },
+      { passive: true }
+    );
   }
 }

@@ -25,29 +25,28 @@ export class StartScreen {
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       color: #fff;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      overflow-y: auto;
     `;
 
     el.innerHTML = `
-      <div style="text-align: center; max-width: 600px; padding: 20px;">
-        <h1 style="color: #ff3333; font-size: 54px; font-weight: 900; letter-spacing: 4px; margin-bottom: 8px; text-shadow: 0 0 20px rgba(255, 50, 50, 0.6);">
+      <div style="text-align: center; max-width: 580px; width: 100%; padding: 10px;">
+        <h1 style="color: #ff3333; font-size: clamp(32px, 8vw, 52px); font-weight: 900; letter-spacing: 3px; margin-bottom: 6px; text-shadow: 0 0 20px rgba(255, 50, 50, 0.6);">
           ZOMBOID DEFENSE
         </h1>
-        <div style="color: #aaa; font-size: 18px; margin-bottom: 36px; letter-spacing: 1px;">
+        <div style="color: #aaa; font-size: clamp(13px, 3.5vw, 17px); margin-bottom: 24px;">
           第一人称微操生存恐怖防守
         </div>
 
-        <!-- 玩法操作指南 -->
-        <div style="background: rgba(0,0,0,0.6); border: 1px solid #442222; border-radius: 8px; padding: 20px; text-align: left; font-size: 14px; line-height: 1.8; margin-bottom: 36px;">
-          <div style="color: #ff8888; font-weight: bold; margin-bottom: 6px;">🎮 核心操作说明：</div>
-          <div>• <strong>A / D 键 或 [1][2][3]</strong>：快速轮换 3 个防御视角（正门 / 窗户 / 活板门）。</div>
-          <div>• <strong>鼠标右键</strong>：切换武器（霰弹枪 ⇄ 战术刀）。</div>
-          <div>• <strong>鼠标左键</strong>：攻击目标。</div>
-          <div>• <strong>鼠标移到底部 / R 键</strong>：霰弹枪装弹。</div>
-          <div>• <strong>Space 空格键</strong>：在正门呼出 3 分屏 CCTV 监控。</div>
-          <div style="color: #ffaa00; margin-top: 8px;">
-            ⚠️ <strong>关键机制</strong>：开枪会发出巨大噪音，导致怪物疯狂加速涌来；使用小刀近战则完全静音！
+        <!-- 玩法操作指南 (兼容 PC 与移动端) -->
+        <div style="background: rgba(0,0,0,0.65); border: 1px solid #552222; border-radius: 8px; padding: 16px; text-align: left; font-size: clamp(12px, 3.2vw, 14px); line-height: 1.8; margin-bottom: 24px;">
+          <div style="color: #ff8888; font-weight: bold; margin-bottom: 6px; font-size: 15px;">🎮 双端操作说明：</div>
+          <div>📱 <strong>触屏手势</strong>：左右划屏切视角 | 点击屏幕开火 | 下滑屏幕或点按钮装弹 | 点击【🔄切枪】切换武器。</div>
+          <div>💻 <strong>键鼠操作</strong>：A/D 或 [1][2][3] 切视角 | 鼠标左键开火 | 鼠标右键切枪 | R 键或移到底部装弹 | 空格呼出 CCTV。</div>
+          <div style="color: #ffaa00; margin-top: 8px; padding-top: 6px; border-top: 1px dashed #442222;">
+            ⚠️ <strong>核心博弈</strong>：霰弹枪开火产生巨大噪音引爆怪潮扎堆涌来；战术刀近战完全静音！
           </div>
         </div>
 
@@ -55,13 +54,14 @@ export class StartScreen {
           background: #cc2222;
           color: #fff;
           border: none;
-          padding: 16px 56px;
-          font-size: 22px;
+          padding: 14px 44px;
+          min-height: 52px;
+          font-size: clamp(17px, 4.5vw, 22px);
           font-weight: bold;
           border-radius: 6px;
           cursor: pointer;
           box-shadow: 0 0 30px rgba(204, 34, 34, 0.6);
-          transition: transform 0.15s, background 0.2s;
+          touch-action: manipulation;
         ">进入黑夜 (START GAME)</button>
       </div>
     `;
@@ -69,11 +69,17 @@ export class StartScreen {
     document.body.appendChild(el);
     this.container = el;
 
-    document.getElementById('btn-start-game')?.addEventListener('click', () => {
+    const startHandler = () => {
       audioManager.init();
       audioManager.resume();
       this.hide();
       this.onStartCallback();
+    };
+
+    document.getElementById('btn-start-game')?.addEventListener('click', startHandler);
+    document.getElementById('btn-start-game')?.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      startHandler();
     });
   }
 

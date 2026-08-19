@@ -11,6 +11,12 @@ export type GameEventMap = {
   WEAPON_RELOAD_COMPLETE: (ammo: number) => void;
   NOISE_PRODUCED: (intensity: number) => void;
 
+  // 移动端/UI 触发事件
+  TRIGGER_ATTACK: () => void;
+  TRIGGER_RELOAD: () => void;
+  TRIGGER_WEAPON_SWITCH: () => void;
+  TRIGGER_CCTV_TOGGLE: () => void;
+
   // 敌人与伤害事件
   ENEMY_SPAWNED: (data: { id: string; type: string; sceneId: string }) => void;
   ENEMY_DAMAGED: (data: { id: string; damage: number }) => void;

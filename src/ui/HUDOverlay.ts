@@ -22,70 +22,144 @@ export class HUDOverlay {
   private render(): void {
     this.container.innerHTML = `
       <!-- 顶部状态栏 -->
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; width: 100%;">
-        <div style="background: rgba(0,0,0,0.75); padding: 10px 18px; border: 1px solid #444; border-radius: 6px;">
-          <div style="font-size: 22px; font-weight: bold; color: #ff4444; letter-spacing: 1px;">
+      <div class="hud-top-bar" style="display: flex; justify-content: space-between; align-items: flex-start; width: 100%; gap: 8px;">
+        <!-- 波次与存活 -->
+        <div style="background: rgba(0,0,0,0.8); padding: 8px 14px; border: 1px solid #444; border-radius: 6px; flex-shrink: 0;">
+          <div style="font-size: 18px; font-weight: bold; color: #ff4444; letter-spacing: 1px;">
             WAVE <span id="hud-wave">1</span>
           </div>
-          <div style="font-size: 13px; color: #aaa; margin-top: 4px;">
-            生存时间: <span id="hud-timer" style="color: #00ff88; font-weight: bold;">00:00</span> | 击杀: <span id="hud-kills" style="color: #44ddff;">0</span>
+          <div style="font-size: 12px; color: #aaa; margin-top: 2px;">
+            时间: <span id="hud-timer" style="color: #00ff88; font-weight: bold;">00:00</span> | 击杀: <span id="hud-kills" style="color: #44ddff;">0</span>
           </div>
-          <div style="font-size: 12px; color: #ffaa00; margin-top: 4px;">
-            本波剩余敌人: <span id="hud-remaining" style="font-weight: bold;">0</span>
+          <div style="font-size: 11px; color: #ffaa00; margin-top: 2px;">
+            剩余: <span id="hud-remaining" style="font-weight: bold;">0</span>
           </div>
         </div>
 
         <!-- 噪音指示器 (核心机制) -->
-        <div style="background: rgba(0,0,0,0.75); padding: 10px 18px; border: 1px solid #444; border-radius: 6px; text-align: center; min-width: 220px;">
-          <div style="font-size: 12px; color: #aaa; margin-bottom: 4px;">枪声噪音指数 (开枪引怪加速)</div>
-          <div style="width: 100%; height: 10px; background: #222; border-radius: 5px; overflow: hidden; border: 1px solid #555;">
+        <div class="hud-noise-panel" style="background: rgba(0,0,0,0.8); padding: 8px 14px; border: 1px solid #444; border-radius: 6px; text-align: center; flex: 1; max-width: 260px;">
+          <div style="font-size: 11px; color: #aaa; margin-bottom: 3px;">枪声噪音 (开枪加速引怪)</div>
+          <div style="width: 100%; height: 8px; background: #222; border-radius: 4px; overflow: hidden; border: 1px solid #555;">
             <div id="hud-noise-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #00ff88, #ffaa00, #ff2222); transition: width 0.1s;"></div>
           </div>
-          <div id="hud-noise-text" style="font-size: 11px; color: #00ff88; margin-top: 4px;">安静 (平静刷新)</div>
+          <div id="hud-noise-text" style="font-size: 11px; color: #00ff88; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">安静 (平缓刷新)</div>
         </div>
 
-        <!-- 当前视角 -->
-        <div style="background: rgba(0,0,0,0.75); padding: 10px 18px; border: 1px solid #444; border-radius: 6px; text-align: right;">
-          <div style="font-size: 12px; color: #888;">当前视角</div>
-          <div id="hud-scene-name" style="font-size: 16px; font-weight: bold; color: #44ccff;">正门 / 监控台 (1)</div>
-          <div style="font-size: 11px; color: #aaa; margin-top: 4px;">[A / D 键快速切换]</div>
+        <!-- 顶部快捷操作 (移动端监控按钮 + 视角显示) -->
+        <div style="background: rgba(0,0,0,0.8); padding: 8px 14px; border: 1px solid #444; border-radius: 6px; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+          <div id="hud-scene-name" style="font-size: 14px; font-weight: bold; color: #44ccff;">正门 (1)</div>
+          <button id="btn-quick-cctv" class="interactive" style="
+            background: #022b10;
+            border: 1px solid #00ff66;
+            color: #00ff66;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+          ">📹 监控 (SPACE)</button>
         </div>
       </div>
 
-      <!-- 底部控制与武器栏 -->
-      <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
-        <!-- 场景导航按钮与防御状态 -->
-        <div class="interactive" style="display: flex; gap: 10px;">
+      <!-- 底部控制与武器栏 (触屏大按键优化) -->
+      <div class="hud-bottom-bar" style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%; gap: 8px;">
+        <!-- 场景导航按钮组 -->
+        <div class="interactive hud-nav-group" style="display: flex; gap: 6px; flex-wrap: wrap;">
           <button id="btn-scene-door" style="${this.btnStyle(this.currentScene === 'door')}">
-            [1] 正门 <span id="barricade-door" style="font-size: 11px; color: #ffaa00;">(木板: 3/3)</span>
+            [1] 正门 <span id="barricade-door" style="font-size: 10px; display: block; color: #ffaa00;">(木板: 3/3)</span>
           </button>
           <button id="btn-scene-window" style="${this.btnStyle(this.currentScene === 'window')}">
-            [2] 窗户 <span id="barricade-window" style="font-size: 11px; color: #00ff88;">(完好)</span>
+            [2] 窗户 <span id="barricade-window" style="font-size: 10px; display: block; color: #00ff88;">(完好)</span>
           </button>
           <button id="btn-scene-cellar" style="${this.btnStyle(this.currentScene === 'cellar')}">
-            [3] 活板门 <span id="barricade-cellar" style="font-size: 11px; color: #00ff88;">(100%)</span>
+            [3] 地窖 <span id="barricade-cellar" style="font-size: 10px; display: block; color: #00ff88;">(100%)</span>
           </button>
         </div>
 
-        <!-- 武器与弹药栏 -->
-        <div class="interactive" style="background: rgba(0,0,0,0.85); padding: 14px 22px; border: 1px solid #555; border-radius: 6px; text-align: right; min-width: 260px;">
-          <div style="font-size: 12px; color: #aaa;">[鼠标右键切换武器]</div>
-          <div style="font-size: 20px; font-weight: bold; margin: 4px 0;">
-            武器: <span id="hud-weapon-name" style="color: #ffaa00;">霰弹枪 (Shotgun)</span>
-          </div>
-          <div id="hud-ammo-container" style="font-size: 15px; color: #ccc;">
-            弹药: <span id="hud-ammo-val" style="color: #00ff88; font-weight: bold;">3 / 3</span> 
-            <div id="hud-reload-hint" style="font-size: 11px; color: #888; margin-top: 2px;">(移到底部或按 R 装弹)</div>
+        <!-- 移动端专属快捷动作栏 (切枪 / 装弹 / 攻击) -->
+        <div class="interactive" style="display: flex; gap: 6px; align-items: flex-end;">
+          <button id="btn-switch-weapon" style="
+            background: #1e3a5f;
+            border: 1px solid #3b82f6;
+            color: #fff;
+            padding: 10px 14px;
+            min-height: 48px;
+            font-size: 13px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+          ">
+            <span>🔄 切枪</span>
+            <span style="font-size: 10px; color: #93c5fd;">[右键]</span>
+          </button>
+
+          <button id="btn-quick-reload" style="
+            background: #451a03;
+            border: 1px solid #f97316;
+            color: #ffedd5;
+            padding: 10px 14px;
+            min-height: 48px;
+            font-size: 13px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+          ">
+            <span>⚡ 装弹</span>
+            <span style="font-size: 10px; color: #fdba74;">[R / 下拉]</span>
+          </button>
+
+          <!-- 武器状态卡片 -->
+          <div style="background: rgba(0,0,0,0.85); padding: 10px 16px; border: 1px solid #555; border-radius: 6px; text-align: right; min-width: 140px;">
+            <div style="font-size: 11px; color: #aaa;">当前装备</div>
+            <div id="hud-weapon-name" style="font-size: 16px; font-weight: bold; color: #ffaa00; margin: 2px 0;">霰弹枪</div>
+            <div id="hud-ammo-container" style="font-size: 13px; color: #ccc;">
+              弹药: <span id="hud-ammo-val" style="color: #00ff88; font-weight: bold;">3 / 3</span>
+            </div>
+            <div id="hud-reload-hint" style="font-size: 10px; color: #888; margin-top: 2px;">轻触屏幕开火</div>
           </div>
         </div>
       </div>
+
+      <style>
+        @media (max-width: 768px) {
+          .hud-top-bar {
+            flex-wrap: wrap;
+          }
+          .hud-noise-panel {
+            order: 3;
+            width: 100%;
+            max-width: 100% !important;
+            margin-top: 4px;
+          }
+          .hud-bottom-bar {
+            flex-direction: column-reverse;
+            align-items: stretch !important;
+            gap: 6px;
+          }
+          .hud-nav-group {
+            justify-content: space-between;
+          }
+          .hud-nav-group button {
+            flex: 1;
+            padding: 8px 4px !important;
+            font-size: 12px !important;
+          }
+        }
+      </style>
     `;
 
     this.bindDomListeners();
   }
 
   public update(): void {
-    // 更新计时与击杀
     const elapsedSec = this.waveSystem.getSurvivalSeconds();
     const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
     const secs = String(elapsedSec % 60).padStart(2, '0');
@@ -106,13 +180,13 @@ export class HUDOverlay {
     if (noiseBar) noiseBar.style.width = `${noisePercent}%`;
     if (noiseText) {
       if (noise > 1.2) {
-        noiseText.innerText = '⚠️ 极度嘈杂 (怪物高速集结中!)';
+        noiseText.innerText = '⚠️ 极度嘈杂 (怪潮狂暴加速!)';
         noiseText.style.color = '#ff2222';
       } else if (noise > 0.4) {
         noiseText.innerText = '🔊 产生枪声噪音';
         noiseText.style.color = '#ffaa00';
       } else {
-        noiseText.innerText = '🤫 安静 (怪物平缓生成)';
+        noiseText.innerText = '🤫 安静 (平缓生成)';
         noiseText.style.color = '#00ff88';
       }
     }
@@ -135,19 +209,22 @@ export class HUDOverlay {
 
   private btnStyle(active: boolean): string {
     return `
-      padding: 10px 16px;
-      font-size: 14px;
+      padding: 8px 12px;
+      min-height: 44px;
+      font-size: 13px;
       font-weight: bold;
       color: ${active ? '#fff' : '#aaa'};
       background: ${active ? '#2b4c7e' : 'rgba(20,20,20,0.85)'};
       border: 1px solid ${active ? '#4a7ec7' : '#444'};
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       transition: all 0.2s;
+      text-align: center;
     `;
   }
 
   private bindDomListeners(): void {
+    // 场景导航
     document.getElementById('btn-scene-door')?.addEventListener('click', () => {
       eventBus.emit('SCENE_CHANGED', 'door');
     });
@@ -156,6 +233,17 @@ export class HUDOverlay {
     });
     document.getElementById('btn-scene-cellar')?.addEventListener('click', () => {
       eventBus.emit('SCENE_CHANGED', 'cellar');
+    });
+
+    // 移动端快捷按钮
+    document.getElementById('btn-switch-weapon')?.addEventListener('click', () => {
+      eventBus.emit('TRIGGER_WEAPON_SWITCH');
+    });
+    document.getElementById('btn-quick-reload')?.addEventListener('click', () => {
+      eventBus.emit('TRIGGER_RELOAD');
+    });
+    document.getElementById('btn-quick-cctv')?.addEventListener('click', () => {
+      eventBus.emit('TRIGGER_CCTV_TOGGLE');
     });
   }
 
@@ -178,7 +266,7 @@ export class HUDOverlay {
     eventBus.on('WEAPON_RELOAD_START', () => {
       const hint = document.getElementById('hud-reload-hint');
       if (hint) {
-        hint.innerText = '⏳ 正在装弹 (Reloading)...';
+        hint.innerText = '⏳ 正在装弹...';
         hint.style.color = '#ffaa00';
       }
     });
@@ -188,7 +276,7 @@ export class HUDOverlay {
       this.updateAmmoDisplay();
       const hint = document.getElementById('hud-reload-hint');
       if (hint) {
-        hint.innerText = '(移到底部或按 R 装弹)';
+        hint.innerText = '轻触屏幕开火';
         hint.style.color = '#888';
       }
     });
@@ -201,9 +289,9 @@ export class HUDOverlay {
 
   private updateSceneDisplay(sceneId: SceneType): void {
     const sceneNames: Record<SceneType, string> = {
-      door: '正门 / 监控台 (1)',
-      window: '窗户防守 (2)',
-      cellar: '地窖活板门 (3)',
+      door: '正门 (1)',
+      window: '窗户 (2)',
+      cellar: '地窖 (3)',
     };
     const nameEl = document.getElementById('hud-scene-name');
     if (nameEl) nameEl.innerText = sceneNames[sceneId] || sceneId;
@@ -222,11 +310,11 @@ export class HUDOverlay {
     if (!nameEl || !ammoContainer) return;
 
     if (this.currentWeapon === 'shotgun') {
-      nameEl.innerText = '霰弹枪 (Shotgun)';
+      nameEl.innerText = '霰弹枪';
       nameEl.style.color = '#ffaa00';
       ammoContainer.style.display = 'block';
     } else {
-      nameEl.innerText = '战术刀 (Knife)';
+      nameEl.innerText = '战术刀';
       nameEl.style.color = '#44ddff';
       ammoContainer.style.display = 'none';
     }
