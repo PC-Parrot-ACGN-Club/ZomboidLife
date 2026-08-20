@@ -76,29 +76,72 @@ export class WindowScene extends BaseScene {
 
     for (const enemy of enemies) {
       const g = new Graphics();
-      if (enemy.stage === 0) {
-        // 远端草坪潜伏 (小黑影)
-        g.ellipse(cx + 60, 320, 20, 45);
-        g.fill({ color: 0x050c18, alpha: 0.85 });
+      const state = enemy.laugherState || (enemy.stage === 0 ? 'idle_far' : 'attacking');
+
+      if (state === 'idle_far') {
+        // 1. 远端草坪驻足不动 (小黑影 + 两颗黄色发光眼睛)
+        const posX = cx + 70;
+        const posY = 320;
+        g.ellipse(posX, posY, 22, 48);
+        g.fill({ color: 0x060c16, alpha: 0.88 });
         // 荧光黄眼
-        g.circle(cx + 56, 305, 2);
-        g.circle(cx + 64, 305, 2);
+        g.circle(posX - 6, posY - 15, 2.5);
+        g.circle(posX + 6, posY - 15, 2.5);
         g.fill({ color: 0xeeff00 });
-      } else {
-        // 贴在玻璃上的巨大诡异笑脸
+      } else if (state === 'stare_close') {
+        // 2. 贴在窗前玻璃上静止凝视 (巨大苍白面孔，双眼圆睁，无声贴脸)
         g.ellipse(cx, 340, 95, 140);
-        g.fill({ color: 0x112233 });
-        // 巨型诡异大眼
-        g.circle(cx - 30, 300, 12);
-        g.circle(cx + 30, 300, 12);
-        g.fill({ color: 0xffffff });
+        g.fill({ color: 0x0f1d2b });
+        // 巨型苍白大眼 (静态圆睁)
+        g.circle(cx - 30, 300, 13);
+        g.circle(cx + 30, 300, 13);
+        g.fill({ color: 0xeeeeee });
         g.circle(cx - 30, 300, 5);
         g.circle(cx + 30, 300, 5);
         g.fill({ color: 0x000000 });
-        // 诡异咧嘴大笑
-        g.arc(cx, 350, 40, 0.1, Math.PI - 0.1);
-        g.stroke({ width: 6, color: 0xdd2222 });
+        // 诡异细线微笑 (闭合/静止凝视形态)
+        g.arc(cx, 345, 32, 0.2, Math.PI - 0.2);
+        g.stroke({ width: 4, color: 0x882222 });
+      } else if (state === 'hidden') {
+        // 3. 躲在窗框后 (大部分隐于右侧窗框与阴影中，可能看不到或仅见暗影边缘)
+        const hideX = cx + 225;
+        const hideY = 330;
+        g.ellipse(hideX, hideY, 18, 55);
+        g.fill({ color: 0x03060a, alpha: 0.45 });
+        // 隐约的一只眼睛反光 (极难看清)
+        g.circle(hideX - 4, hideY - 14, 1.5);
+        g.fill({ color: 0xbbcc00, alpha: 0.4 });
+      } else if (state === 'attacking') {
+        // 4. 决定攻击并贴在窗前：血色狞笑、剧烈攻击震动特效
+        const shakeX = (Math.random() - 0.5) * 6;
+        const shakeY = (Math.random() - 0.5) * 4;
+        const faceX = cx + shakeX;
+        const faceY = 340 + shakeY;
+
+        // 狞恶红黑面孔
+        g.ellipse(faceX, faceY, 100, 145);
+        g.fill({ color: 0x1a0d14 });
+
+        // 血丝大眼
+        g.circle(faceX - 30, faceY - 40, 14);
+        g.circle(faceX + 30, faceY - 40, 14);
+        g.fill({ color: 0xffffff });
+        g.circle(faceX - 30, faceY - 40, 6);
+        g.circle(faceX + 30, faceY - 40, 6);
+        g.fill({ color: 0xdd1111 });
+
+        // 狂暴裂口大笑
+        g.arc(faceX, faceY + 10, 44, 0.05, Math.PI - 0.05);
+        g.stroke({ width: 8, color: 0xff1111 });
+
+        // 玻璃抓痕
+        g.moveTo(faceX - 25, faceY - 10);
+        g.lineTo(faceX - 10, faceY + 15);
+        g.moveTo(faceX + 15, faceY - 8);
+        g.lineTo(faceX + 30, faceY + 16);
+        g.stroke({ width: 2, color: 0xff6666, alpha: 0.8 });
       }
+
       this.enemyVisualContainer.addChild(g);
     }
   }

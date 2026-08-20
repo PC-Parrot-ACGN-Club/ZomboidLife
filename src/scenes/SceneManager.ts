@@ -84,6 +84,10 @@ export class SceneManager {
     return this.scenes.get(this.currentSceneId);
   }
 
+  public getCurrentSceneId(): SceneType {
+    return this.currentSceneId;
+  }
+
   public update(deltaMs: number): void {
     const current = this.getCurrentScene();
     if (current) {

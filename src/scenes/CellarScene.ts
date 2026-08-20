@@ -154,16 +154,42 @@ export class CellarScene extends BaseScene {
     for (const enemy of enemies) {
       const g = new Graphics();
       if (enemy.stage === 0) {
-        // 梯底深处 (两颗幽绿发光眼睛)
-        g.circle(cx - 8, 560, 3);
-        g.circle(cx + 8, 560, 3);
-        g.fill({ color: 0x00ff88 });
+        // 梯底深处
+        const isVoiceActive = (enemy.mimicVoiceVisualTimerMs || 0) > 0;
+        const isRetreated = enemy.mimicRetreated && !isVoiceActive;
+
+        if (isRetreated) {
+          // 缩回黑暗深处 (画面中隐去/仅留极淡暗渊)
+          g.circle(cx, 565, 12);
+          g.fill({ color: 0x010101, alpha: 0.6 });
+        } else {
+          // 露头窥探 / 发声显形
+          // 梯底暗影
+          g.ellipse(cx, 565, 20, 24);
+          g.fill({ color: 0x100518, alpha: 0.9 });
+          // 两颗幽绿发光眼睛
+          g.circle(cx - 8, 558, 3.5);
+          g.circle(cx + 8, 558, 3.5);
+          g.fill({ color: 0x00ff88 });
+
+          // 发声时的声波光环特效 (无论发出谁的声音都必定强制显形)
+          if (isVoiceActive) {
+            const waveR = 20 + (Date.now() % 400) * 0.04;
+            g.circle(cx, 558, waveR);
+            g.stroke({ width: 2, color: 0x00ffaa, alpha: 0.75 });
+          }
+        }
       } else if (enemy.stage === 1) {
-        // 爬到梯子中段
+        // 爬到梯子中段 (继续上爬)
         g.ellipse(cx, 480, 40, 60);
         g.fill({ color: 0x221122 });
-        g.circle(cx - 10, 460, 4);
-        g.circle(cx + 10, 460, 4);
+        // 爬梯手臂
+        g.rect(cx - 35, 470, 10, 18);
+        g.rect(cx + 25, 470, 10, 18);
+        g.fill({ color: 0x2e182e });
+        // 发光绿眼
+        g.circle(cx - 10, 460, 4.5);
+        g.circle(cx + 10, 460, 4.5);
         g.fill({ color: 0x00ffaa });
       } else {
         // 爬至门顶正在疯狂顶门 (门板剧烈震动)

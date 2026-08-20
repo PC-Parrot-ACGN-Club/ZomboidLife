@@ -642,14 +642,81 @@ export class AudioManager {
   }
 
   /**
-   * 拟态者 Mimic 发出欺骗性声音 (固定在左侧地窖 pan = -0.75, 但模拟笑声或木板声)
+   * 拟态者 Mimic 自身独特叫声 (地窖深处异化低吼与咔哒声, pan = -0.75, 低通滤波)
+   */
+  public playMimicOwnSound(pan: number = -0.75): void {
+    if (!this.ctx || this.isMuted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const { inputNode } = this.createPannedChain(pan, 750);
+
+    // 1. 低频怪异嘶吼与调频
+    const osc = this.ctx.createOscillator();
+    const lfo = this.ctx.createOscillator();
+    const lfoGain = this.ctx.createGain();
+    const gain = this.ctx.createGain();
+
+    lfo.type = 'sawtooth';
+    lfo.frequency.setValueAtTime(16, t);
+    lfoGain.gain.setValueAtTime(70, t);
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.exponentialRampToValueAtTime(70, t + 0.65);
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+
+    gain.gain.setValueAtTime(0.6, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.65);
+
+    osc.connect(gain);
+    gain.connect(inputNode);
+
+    lfo.start(t);
+    osc.start(t);
+    lfo.stop(t + 0.65);
+    osc.stop(t + 0.65);
+
+    // 2. 伴随骨骼与木质咔哒声
+    for (let i = 0; i < 3; i++) {
+      const clickTime = t + 0.12 * i;
+      const clickOsc = this.ctx.createOscillator();
+      const clickGain = this.ctx.createGain();
+      clickOsc.type = 'square';
+      clickOsc.frequency.setValueAtTime(280 - i * 40, clickTime);
+      clickGain.gain.setValueAtTime(0.35, clickTime);
+      clickGain.gain.exponentialRampToValueAtTime(0.01, clickTime + 0.04);
+      clickOsc.connect(clickGain);
+      clickGain.connect(inputNode);
+      clickOsc.start(clickTime);
+      clickOsc.stop(clickTime + 0.04);
+    }
+  }
+
+  /**
+   * 拟态者 Mimic 发出声音 (自身声音、或模仿正门/窗户声音，但声源均固定在左侧地窖 pan = -0.75)
+   */
+  public playMimicSound(type: 'own' | 'walker' | 'laugher'): void {
+    if (type === 'own') {
+      this.playMimicOwnSound(-0.75);
+    } else if (type === 'walker') {
+      this.playDoorWoodHit(-0.75);
+    } else {
+      this.playLaugherEerieSound(-0.75);
+    }
+  }
+
+  /**
+   * 拟态者 Mimic 发出欺骗性声音 (固定在左侧地窖 pan = -0.75)
    */
   public playMimicDeceptionSound(): void {
-    if (Math.random() < 0.5) {
-      // 模拟窗户笑声，但声源在左侧地窖！
+    const rand = Math.random();
+    if (rand < 0.4) {
+      this.playMimicOwnSound(-0.75);
+    } else if (rand < 0.7) {
       this.playLaugherEerieSound(-0.75);
     } else {
-      // 模拟正门撞击，但声源在左侧地窖！
       this.playDoorWoodHit(-0.75);
     }
   }

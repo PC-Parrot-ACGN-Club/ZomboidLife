@@ -3,6 +3,8 @@ import { eventBus } from '@/core/EventBus';
 import { audioManager } from '@/audio/AudioManager';
 
 export type EnemyType = 'walker' | 'laugher' | 'mimic';
+export type LaugherSubState = 'idle_far' | 'stare_close' | 'hidden' | 'attacking';
+export type MimicVoiceType = 'own' | 'walker' | 'laugher';
 
 export interface EnemyInstance {
   id: string;
@@ -17,6 +19,19 @@ export interface EnemyInstance {
   isAttacking: boolean;
   attackTimerMs: number;
   isDead: boolean;
+
+  // Laugher 特有状态机制
+  laugherState?: LaugherSubState;
+  laugherStateTimerMs?: number;
+  laugherNextDecisionMs?: number;
+  laugherTotalWanderMs?: number;
+
+  // Mimic 特有机制
+  mimicRetreated?: boolean; // 是否处于缩回黑暗状态
+  mimicRetreatTimerMs?: number; // 移开视线后的探出恢复计时
+  mimicVoiceTimerMs?: number; // 发声计时
+  mimicVoiceVisualTimerMs?: number; // 发声强制显形计时
+  mimicLastVoiceType?: MimicVoiceType; // 上次发声类型
 }
 
 export class EnemyManager {
@@ -27,7 +42,7 @@ export class EnemyManager {
   private doorTurretAvailable: boolean = true;
   private cellarTrapAvailable: boolean = true;
   private isGameOver: boolean = false;
-  private mimicSoundTimerMs: number = 0;
+  private currentActiveScene: SceneType = GAME_CONFIG.SCENES.DOOR;
 
   constructor() {
     this.bindEvents();
@@ -41,7 +56,13 @@ export class EnemyManager {
     this.doorTurretAvailable = true;
     this.cellarTrapAvailable = true;
     this.isGameOver = false;
-    this.mimicSoundTimerMs = 0;
+    this.currentActiveScene = GAME_CONFIG.SCENES.DOOR;
+  }
+
+  public hasActiveLaugher(): boolean {
+    return Array.from(this.enemies.values()).some(
+      (e) => e.type === 'laugher' && !e.isDead
+    );
   }
 
   public spawnEnemy(type: EnemyType): EnemyInstance {
@@ -54,85 +75,253 @@ export class EnemyManager {
     if (type === 'walker') {
       sceneId = GAME_CONFIG.SCENES.DOOR;
       maxHealth = GAME_CONFIG.ENEMIES.WALKER.MAX_HEALTH;
-      stageDurationMs = 2400; // 略微提速
+      stageDurationMs = 2400;
       maxStage = 2;
+
+      const enemy: EnemyInstance = {
+        id,
+        type,
+        sceneId,
+        health: maxHealth,
+        maxHealth,
+        stage: 0,
+        maxStage,
+        stageProgressMs: 0,
+        stageDurationMs,
+        isAttacking: false,
+        attackTimerMs: 0,
+        isDead: false,
+      };
+
+      this.enemies.set(id, enemy);
+      eventBus.emit('ENEMY_SPAWNED', { id, type, sceneId });
+      return enemy;
     } else if (type === 'laugher') {
+      // 1. 同一时间窗外最多有一只 Laugher
+      const existing = Array.from(this.enemies.values()).find(
+        (e) => e.type === 'laugher' && !e.isDead
+      );
+      if (existing) {
+        return existing;
+      }
+
       sceneId = GAME_CONFIG.SCENES.WINDOW;
       maxHealth = GAME_CONFIG.ENEMIES.LAUGHER.MAX_HEALTH;
-      stageDurationMs = 1700; // 略微提速
+      stageDurationMs = GAME_CONFIG.ENEMIES.LAUGHER.MOVE_SPEED_MS;
       maxStage = 1;
-    } else if (type === 'mimic') {
+
+      // 初始徘徊状态：40% 远端驻足，35% 躲在窗后，25% 贴脸凝视
+      const rand = Math.random();
+      const initialLaugherState: LaugherSubState =
+        rand < 0.4 ? 'idle_far' : rand < 0.75 ? 'hidden' : 'stare_close';
+
+      const decisionMin = GAME_CONFIG.ENEMIES.LAUGHER.DECISION_MIN_MS;
+      const decisionMax = GAME_CONFIG.ENEMIES.LAUGHER.DECISION_MAX_MS;
+
+      const enemy: EnemyInstance = {
+        id,
+        type,
+        sceneId,
+        health: maxHealth,
+        maxHealth,
+        stage: initialLaugherState === 'stare_close' ? 1 : 0,
+        maxStage,
+        stageProgressMs: 0,
+        stageDurationMs,
+        isAttacking: false,
+        attackTimerMs: 0,
+        isDead: false,
+        laugherState: initialLaugherState,
+        laugherStateTimerMs: 0,
+        laugherNextDecisionMs: decisionMin + Math.random() * (decisionMax - decisionMin),
+        laugherTotalWanderMs: 0,
+      };
+
+      this.enemies.set(id, enemy);
+      eventBus.emit('ENEMY_SPAWNED', { id, type, sceneId });
+      return enemy;
+    } else {
+      // mimic
       sceneId = GAME_CONFIG.SCENES.CELLAR;
       maxHealth = GAME_CONFIG.ENEMIES.MIMIC.MAX_HEALTH;
-      stageDurationMs = 2100; // 略微提速
+      stageDurationMs = GAME_CONFIG.ENEMIES.MIMIC.MOVE_SPEED_MS;
       maxStage = 2;
+
+      const voiceMin = GAME_CONFIG.ENEMIES.MIMIC.VOICE_INTERVAL_MIN_MS;
+      const voiceMax = GAME_CONFIG.ENEMIES.MIMIC.VOICE_INTERVAL_MAX_MS;
+
+      const enemy: EnemyInstance = {
+        id,
+        type,
+        sceneId,
+        health: maxHealth,
+        maxHealth,
+        stage: 0,
+        maxStage,
+        stageProgressMs: 0,
+        stageDurationMs,
+        isAttacking: false,
+        attackTimerMs: 0,
+        isDead: false,
+        mimicRetreated: this.currentActiveScene === 'cellar', // 若玩家此时正看地窖，则初始缩在黑暗中
+        mimicRetreatTimerMs: 0,
+        mimicVoiceTimerMs: voiceMin + Math.random() * (voiceMax - voiceMin),
+        mimicVoiceVisualTimerMs: 0,
+        mimicLastVoiceType: 'own',
+      };
+
+      this.enemies.set(id, enemy);
+      eventBus.emit('ENEMY_SPAWNED', { id, type, sceneId });
+      return enemy;
     }
-
-    const enemy: EnemyInstance = {
-      id,
-      type,
-      sceneId,
-      health: maxHealth,
-      maxHealth,
-      stage: 0,
-      maxStage,
-      stageProgressMs: 0,
-      stageDurationMs,
-      isAttacking: false,
-      attackTimerMs: 0,
-      isDead: false,
-    };
-
-    this.enemies.set(id, enemy);
-    eventBus.emit('ENEMY_SPAWNED', { id, type, sceneId });
-    return enemy;
   }
 
   public update(deltaMs: number): void {
     if (this.isGameOver) return;
 
-    // 更新各怪物状态与步进
     for (const [id, enemy] of this.enemies.entries()) {
       if (enemy.isDead) {
         this.enemies.delete(id);
         continue;
       }
 
-      if (enemy.stage < enemy.maxStage) {
-        // 正在靠近中
-        enemy.stageProgressMs += deltaMs;
-        if (enemy.stageProgressMs >= enemy.stageDurationMs) {
-          enemy.stageProgressMs = 0;
-          enemy.stage++;
-
-          // 播放阶段步进与预警音效
-          this.playStageSound(enemy);
-
-          if (enemy.stage === enemy.maxStage) {
-            enemy.isAttacking = true;
-            enemy.attackTimerMs = 0;
-          }
-        }
-      } else {
-        // 已到达防御口，进行破坏倒计时/攻击
-        this.handleEnemyAttacking(enemy, deltaMs);
+      if (enemy.type === 'walker') {
+        this.updateWalker(enemy, deltaMs);
+      } else if (enemy.type === 'laugher') {
+        this.updateLaugher(enemy, deltaMs);
+      } else if (enemy.type === 'mimic') {
+        this.updateMimic(enemy, deltaMs);
       }
     }
-
-    // 拟态者 Mimic 伪装声效定时器
-    this.updateMimicSound(deltaMs);
   }
 
-  private playStageSound(enemy: EnemyInstance): void {
-    if (enemy.type === 'walker') {
-      if (enemy.stage === 1) audioManager.playDoorWoodHit(0.0);
-    } else if (enemy.type === 'laugher') {
-      if (enemy.stage === 1) {
-        audioManager.playWindowGlassTap(0.75);
-        audioManager.playLaugherEerieSound(0.75);
+  private updateWalker(enemy: EnemyInstance, deltaMs: number): void {
+    if (enemy.stage < enemy.maxStage) {
+      enemy.stageProgressMs += deltaMs;
+      if (enemy.stageProgressMs >= enemy.stageDurationMs) {
+        enemy.stageProgressMs = 0;
+        enemy.stage++;
+        if (enemy.stage === 1) {
+          audioManager.playDoorWoodHit(0.0);
+        } else if (enemy.stage === enemy.maxStage) {
+          enemy.isAttacking = true;
+          enemy.attackTimerMs = 0;
+        }
       }
-    } else if (enemy.type === 'mimic') {
-      audioManager.playCellarLadderSound(-0.75);
+    } else {
+      this.handleEnemyAttacking(enemy, deltaMs);
+    }
+  }
+
+  private updateLaugher(enemy: EnemyInstance, deltaMs: number): void {
+    if (enemy.laugherState !== 'attacking') {
+      enemy.laugherStateTimerMs = (enemy.laugherStateTimerMs || 0) + deltaMs;
+      enemy.laugherTotalWanderMs = (enemy.laugherTotalWanderMs || 0) + deltaMs;
+
+      const nextDecision = enemy.laugherNextDecisionMs || 3000;
+      if (enemy.laugherStateTimerMs >= nextDecision) {
+        enemy.laugherStateTimerMs = 0;
+
+        const maxWander = GAME_CONFIG.ENEMIES.LAUGHER.MAX_WANDER_TIME_MS;
+        const mustAttack = (enemy.laugherTotalWanderMs || 0) >= maxWander;
+        const willAttack = mustAttack || Math.random() < GAME_CONFIG.ENEMIES.LAUGHER.ATTACK_CHANCE;
+
+        if (willAttack) {
+          // 决定攻击：必定贴在窗前，并发出诡异笑声与敲窗声
+          enemy.laugherState = 'attacking';
+          enemy.stage = 1;
+          enemy.isAttacking = true;
+          enemy.attackTimerMs = 0;
+
+          audioManager.playWindowGlassTap(0.75);
+          audioManager.playLaugherEerieSound(0.75);
+          eventBus.emit('LAUGHER_ATTACK_DECIDED', { id: enemy.id });
+        } else {
+          // 在 远处不动(idle_far) / 贴脸不动(stare_close) / 躲在窗后(hidden) 间随机转换
+          const states: LaugherSubState[] = ['idle_far', 'stare_close', 'hidden'];
+          const otherStates = states.filter((s) => s !== enemy.laugherState);
+          enemy.laugherState = otherStates[Math.floor(Math.random() * otherStates.length)];
+          enemy.stage = enemy.laugherState === 'stare_close' ? 1 : 0;
+
+          const decisionMin = GAME_CONFIG.ENEMIES.LAUGHER.DECISION_MIN_MS;
+          const decisionMax = GAME_CONFIG.ENEMIES.LAUGHER.DECISION_MAX_MS;
+          enemy.laugherNextDecisionMs = decisionMin + Math.random() * (decisionMax - decisionMin);
+        }
+      }
+    } else {
+      // 正在破窗突袭
+      this.handleEnemyAttacking(enemy, deltaMs);
+    }
+  }
+
+  private updateMimic(enemy: EnemyInstance, deltaMs: number): void {
+    // 1. 发声显形计时器更新
+    if (enemy.mimicVoiceVisualTimerMs && enemy.mimicVoiceVisualTimerMs > 0) {
+      enemy.mimicVoiceVisualTimerMs -= deltaMs;
+    }
+
+    // 2. 发声定时器 (发出自身声音或模仿 Walker/Laugher，发声时必定在地图/画面上可见)
+    enemy.mimicVoiceTimerMs = (enemy.mimicVoiceTimerMs || 4000) - deltaMs;
+    if (enemy.mimicVoiceTimerMs <= 0) {
+      const voiceMin = GAME_CONFIG.ENEMIES.MIMIC.VOICE_INTERVAL_MIN_MS;
+      const voiceMax = GAME_CONFIG.ENEMIES.MIMIC.VOICE_INTERVAL_MAX_MS;
+      enemy.mimicVoiceTimerMs = voiceMin + Math.random() * (voiceMax - voiceMin);
+
+      const r = Math.random();
+      const voiceType: MimicVoiceType = r < 0.4 ? 'own' : r < 0.7 ? 'walker' : 'laugher';
+      enemy.mimicLastVoiceType = voiceType;
+
+      // 播放声音 (声源固定在左侧地窖)
+      audioManager.playMimicSound(voiceType);
+
+      // 发声时必定在地图/画面可见
+      enemy.mimicVoiceVisualTimerMs = GAME_CONFIG.ENEMIES.MIMIC.VOICE_VISIBILITY_DURATION_MS;
+      enemy.mimicRetreated = false; // 破除隐蔽露头发声
+      eventBus.emit('MIMIC_VOICE_EMITTED', { id: enemy.id, voiceType });
+    }
+
+    // 3. 视线对抗与移动逻辑
+    const isPlayerLooking = this.currentActiveScene === 'cellar';
+    const isVoiceActive = (enemy.mimicVoiceVisualTimerMs || 0) > 0;
+
+    if (enemy.stage === 0) {
+      // 在梯底
+      if (isPlayerLooking) {
+        if (!isVoiceActive) {
+          // 玩家看到底部 Mimic，Mimic 缩回黑暗深处并暂停上爬
+          enemy.mimicRetreated = true;
+          enemy.stageProgressMs = 0;
+        }
+      } else {
+        // 玩家不在地窖
+        if (enemy.mimicRetreated) {
+          enemy.mimicRetreatTimerMs = (enemy.mimicRetreatTimerMs || 0) + deltaMs;
+          if (enemy.mimicRetreatTimerMs >= GAME_CONFIG.ENEMIES.MIMIC.RETREAT_COOLDOWN_MS) {
+            enemy.mimicRetreated = false;
+            enemy.mimicRetreatTimerMs = 0;
+          }
+        } else {
+          // 探出后开始向上攀爬
+          enemy.stageProgressMs += deltaMs;
+          if (enemy.stageProgressMs >= enemy.stageDurationMs) {
+            enemy.stageProgressMs = 0;
+            enemy.stage = 1; // 爬到梯子中段
+            audioManager.playCellarLadderSound(-0.75);
+          }
+        }
+      }
+    } else if (enemy.stage === 1) {
+      // 在梯子中段：无论玩家是否看到，继续上爬！
+      enemy.stageProgressMs += deltaMs;
+      if (enemy.stageProgressMs >= enemy.stageDurationMs) {
+        enemy.stageProgressMs = 0;
+        enemy.stage = 2; // 爬至门顶
+        enemy.isAttacking = true;
+        audioManager.playCellarLadderSound(-0.75);
+      }
+    } else {
+      // 在门顶攻击活板门
+      this.handleEnemyAttacking(enemy, deltaMs);
     }
   }
 
@@ -260,17 +449,6 @@ export class EnemyManager {
     });
   }
 
-  private updateMimicSound(deltaMs: number): void {
-    const hasMimic = Array.from(this.enemies.values()).some((e) => e.type === 'mimic' && !e.isDead);
-    if (hasMimic) {
-      this.mimicSoundTimerMs += deltaMs;
-      if (this.mimicSoundTimerMs > 4000) {
-        this.mimicSoundTimerMs = 0;
-        audioManager.playMimicDeceptionSound();
-      }
-    }
-  }
-
   /**
    * 玩家攻击命中判定
    */
@@ -287,7 +465,12 @@ export class EnemyManager {
 
     // 战术刀只能攻击处于 Close/Attacking 状态的怪
     if (weaponType === 'knife') {
-      const closeTarget = targets.find((e) => e.stage === e.maxStage);
+      const closeTarget = targets.find(
+        (e) =>
+          e.stage === e.maxStage ||
+          e.laugherState === 'stare_close' ||
+          e.laugherState === 'attacking'
+      );
       if (closeTarget) {
         return this.applyDamage(closeTarget, damage);
       }
@@ -364,6 +547,24 @@ export class EnemyManager {
   private bindEvents(): void {
     eventBus.on('GAME_RESTART', () => {
       this.reset();
+    });
+
+    eventBus.on('SCENE_CHANGED', (sceneId: SceneType) => {
+      this.currentActiveScene = sceneId;
+      // 当玩家切到地窖场景时，若 Mimic 正在梯底且未处于发声显形期，立即触发缩回黑暗
+      if (sceneId === 'cellar') {
+        for (const enemy of this.enemies.values()) {
+          if (
+            enemy.type === 'mimic' &&
+            !enemy.isDead &&
+            enemy.stage === 0 &&
+            (!enemy.mimicVoiceVisualTimerMs || enemy.mimicVoiceVisualTimerMs <= 0)
+          ) {
+            enemy.mimicRetreated = true;
+            enemy.stageProgressMs = 0;
+          }
+        }
+      }
     });
   }
 }

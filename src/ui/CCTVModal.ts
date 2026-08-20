@@ -185,18 +185,61 @@ export class CCTVModal {
     const enemy = enemies[0];
     let stageText = '远处 (FAR)';
     let alertColor = '#ffaa00';
-    if (enemy.stage === 1) {
-      stageText = '逼近中 (MID-RANGE)';
-      alertColor = '#ff6600';
-    } else if (enemy.stage >= enemy.maxStage) {
-      stageText = '⚠️ 正在破防 (ATTACKING)';
-      alertColor = '#ff2222';
+
+    if (enemy.type === 'laugher') {
+      if (enemy.laugherState === 'hidden') {
+        stageText = '躲在窗框后 (HIDDEN)';
+        alertColor = '#8899aa';
+      } else if (enemy.laugherState === 'idle_far') {
+        stageText = '远端驻足 (FAR STANDING)';
+        alertColor = '#ffaa00';
+      } else if (enemy.laugherState === 'stare_close') {
+        stageText = '⚠️ 贴窗凝视 (STARING CLOSE)';
+        alertColor = '#ff8800';
+      } else if (enemy.laugherState === 'attacking') {
+        stageText = '🚨 破窗突袭中！(ATTACKING)';
+        alertColor = '#ff2222';
+      }
+    } else if (enemy.type === 'mimic') {
+      const isVoiceActive = (enemy.mimicVoiceVisualTimerMs || 0) > 0;
+      if (enemy.stage === 0) {
+        if (isVoiceActive) {
+          const vType =
+            enemy.mimicLastVoiceType === 'own'
+              ? '自身嘶吼'
+              : enemy.mimicLastVoiceType === 'walker'
+              ? '模仿正门'
+              : '模仿笑声';
+          stageText = `🔊 梯底发声 [${vType}] (MAKING SOUND)`;
+          alertColor = '#00ffcc';
+        } else if (enemy.mimicRetreated) {
+          stageText = '潜伏黑暗深处 (IN DARKNESS)';
+          alertColor = '#558866';
+        } else {
+          stageText = '梯底窥探 (LADDER BOTTOM)';
+          alertColor = '#00ff88';
+        }
+      } else if (enemy.stage === 1) {
+        stageText = '⚠️ 沿梯攀爬中 (CLIMBING)';
+        alertColor = '#ff8800';
+      } else {
+        stageText = '🚨 撞击活板门！(ATTACKING)';
+        alertColor = '#ff2222';
+      }
+    } else {
+      if (enemy.stage === 1) {
+        stageText = '逼近中 (MID-RANGE)';
+        alertColor = '#ff6600';
+      } else if (enemy.stage >= enemy.maxStage) {
+        stageText = '⚠️ 正在破防 (ATTACKING)';
+        alertColor = '#ff2222';
+      }
     }
 
     el.innerHTML = `
       <div style="text-align: center; color: ${alertColor};">
-        <div style="font-size: 20px; font-weight: bold; margin-bottom: 4px;">⚠️ [${enemy.type.toUpperCase()}]</div>
-        <div style="font-size: 14px;">状态: <strong>${stageText}</strong></div>
+        <div style="font-size: 18px; font-weight: bold; margin-bottom: 4px;">⚠️ [${enemy.type.toUpperCase()}]</div>
+        <div style="font-size: 13px;">状态: <strong>${stageText}</strong></div>
         <div style="font-size: 12px; color: #88ffaa; margin-top: 4px;">HP: ${enemy.health} / ${enemy.maxHealth}</div>
         ${defenseSubText}
       </div>

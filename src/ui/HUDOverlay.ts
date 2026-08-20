@@ -10,6 +10,7 @@ export class HUDOverlay {
   private currentScene: SceneType = GAME_CONFIG.SCENES.DOOR;
   private waveSystem: WaveSystem;
   private enemyManager: EnemyManager;
+  private isAiEnabled: boolean = false;
 
   constructor(waveSystem: WaveSystem, enemyManager: EnemyManager) {
     this.container = document.getElementById('hud-overlay')!;
@@ -37,7 +38,7 @@ export class HUDOverlay {
         </div>
 
         <!-- 噪音指示器 (核心机制) -->
-        <div class="hud-noise-panel" style="background: rgba(0,0,0,0.8); padding: 8px 14px; border: 1px solid #444; border-radius: 6px; text-align: center; flex: 1; max-width: 260px;">
+        <div class="hud-noise-panel" style="background: rgba(0,0,0,0.8); padding: 8px 14px; border: 1px solid #444; border-radius: 6px; text-align: center; flex: 1; max-width: 240px;">
           <div style="font-size: 11px; color: #aaa; margin-bottom: 3px;">枪声噪音 (开枪加速引怪)</div>
           <div style="width: 100%; height: 8px; background: #222; border-radius: 4px; overflow: hidden; border: 1px solid #555;">
             <div id="hud-noise-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #00ff88, #ffaa00, #ff2222); transition: width 0.1s;"></div>
@@ -45,9 +46,22 @@ export class HUDOverlay {
           <div id="hud-noise-text" style="font-size: 11px; color: #00ff88; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">安静 (平缓刷新)</div>
         </div>
 
-        <!-- 顶部快捷操作 (移动端监控按钮 + 视角显示) -->
+        <!-- 顶部快捷操作 (AI 托管开关 + 移动端监控 + 视角显示) -->
         <div style="background: rgba(0,0,0,0.8); padding: 8px 14px; border: 1px solid #444; border-radius: 6px; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
-          <div id="hud-scene-name" style="font-size: 14px; font-weight: bold; color: #44ccff;">正门 (1)</div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button id="btn-toggle-ai" class="interactive" style="
+              background: #18181b;
+              border: 1px solid #52525b;
+              color: #a1a1aa;
+              padding: 4px 10px;
+              font-size: 12px;
+              font-weight: bold;
+              border-radius: 4px;
+              cursor: pointer;
+              transition: all 0.2s;
+            ">🤖 AI 托管 [OFF]</button>
+            <div id="hud-scene-name" style="font-size: 14px; font-weight: bold; color: #44ccff;">正门 (1)</div>
+          </div>
           <button id="btn-quick-cctv" class="interactive" style="
             background: #022b10;
             border: 1px solid #00ff66;
@@ -58,6 +72,65 @@ export class HUDOverlay {
             border-radius: 4px;
             cursor: pointer;
           ">📹 监控 (SPACE)</button>
+        </div>
+      </div>
+
+      <!-- AI 神经决策中枢看板 (AI 模式开启时常驻展现) -->
+      <div id="hud-ai-terminal" style="
+        align-self: center;
+        background: rgba(3, 15, 28, 0.88);
+        border: 1.5px solid #06b6d4;
+        box-shadow: 0 0 25px rgba(6, 182, 212, 0.35);
+        border-radius: 8px;
+        padding: 8px 16px;
+        max-width: 680px;
+        width: 95%;
+        margin-top: 6px;
+        color: #e0f2fe;
+        font-family: 'Courier New', Courier, monospace, sans-serif;
+        display: none;
+        pointer-events: none;
+        transition: all 0.3s ease;
+      ">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(6, 182, 212, 0.4); padding-bottom: 4px; margin-bottom: 6px; font-size: 12px;">
+          <div style="display: flex; align-items: center; gap: 6px; font-weight: bold; color: #38bdf8;">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #00ff88; box-shadow: 0 0 8px #00ff88; animation: blink 1s infinite;"></span>
+            <span>🧠 NEURAL DEFENSE CORE // AI 自主决策中</span>
+          </div>
+          <div id="hud-ai-state-badge" style="background: #0e7490; color: #e0f2fe; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">
+            🟢 战术系统接管
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+          <!-- 实时决策思维 -->
+          <div style="flex: 1; min-width: 220px; font-size: 12px; line-height: 1.5;">
+            <div style="color: #94a3b8; font-size: 11px;">[AI 思考推理]</div>
+            <div id="hud-ai-thought-text" style="color: #67e8f9; font-weight: bold; margin-top: 1px;">
+              正在全方位扫描 3 路防线...
+            </div>
+            <div style="color: #facc15; font-size: 11px; margin-top: 2px;">
+              [当前行动] <span id="hud-ai-action-text" style="color: #ffffff; font-weight: bold;">初始化态势感知</span>
+            </div>
+          </div>
+
+          <!-- 3 路威胁度雷达 -->
+          <div style="display: flex; gap: 8px; align-items: center; font-size: 11px; background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 6px; border: 1px solid #1e293b;">
+            <div style="text-align: center;">
+              <div style="color: #94a3b8;">正门</div>
+              <div id="hud-ai-threat-door" style="font-weight: bold; color: #38bdf8;">0%</div>
+            </div>
+            <div style="color: #475569;">|</div>
+            <div style="text-align: center;">
+              <div style="color: #94a3b8;">窗户</div>
+              <div id="hud-ai-threat-window" style="font-weight: bold; color: #38bdf8;">0%</div>
+            </div>
+            <div style="color: #475569;">|</div>
+            <div style="text-align: center;">
+              <div style="color: #94a3b8;">地窖</div>
+              <div id="hud-ai-threat-cellar" style="font-weight: bold; color: #38bdf8;">0%</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -151,6 +224,10 @@ export class HUDOverlay {
       "></div>
 
       <style>
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.2; }
+        }
         @media (max-width: 768px) {
           .hud-top-bar {
             flex-wrap: wrap;
@@ -294,6 +371,13 @@ export class HUDOverlay {
     document.getElementById('btn-quick-cctv')?.addEventListener('click', () => {
       eventBus.emit('TRIGGER_CCTV_TOGGLE');
     });
+
+    // AI 托管开关按钮
+    document.getElementById('btn-toggle-ai')?.addEventListener('click', () => {
+      this.isAiEnabled = !this.isAiEnabled;
+      eventBus.emit('AI_MODE_TOGGLED', this.isAiEnabled);
+      this.updateAiDisplay();
+    });
   }
 
   private bindEvents(): void {
@@ -359,6 +443,78 @@ export class HUDOverlay {
       const el = document.getElementById('hud-wave');
       if (el) el.innerText = wave.toString();
     });
+
+    // AI 模式与决策事件
+    eventBus.on('AI_MODE_TOGGLED', (enabled) => {
+      this.isAiEnabled = enabled;
+      this.updateAiDisplay();
+    });
+
+    eventBus.on('AI_THOUGHT_UPDATED', (data) => {
+      this.isAiEnabled = data.enabled;
+      this.updateAiDisplay();
+      this.updateAiThought(data);
+    });
+  }
+
+  private updateAiDisplay(): void {
+    const btn = document.getElementById('btn-toggle-ai');
+    const terminal = document.getElementById('hud-ai-terminal');
+
+    if (btn) {
+      if (this.isAiEnabled) {
+        btn.innerText = '🤖 AI 托管中 [ON]';
+        btn.style.background = '#083344';
+        btn.style.borderColor = '#06b6d4';
+        btn.style.color = '#67e8f9';
+        btn.style.boxShadow = '0 0 12px rgba(6,182,212,0.6)';
+      } else {
+        btn.innerText = '🤖 AI 托管 [OFF]';
+        btn.style.background = '#18181b';
+        btn.style.borderColor = '#52525b';
+        btn.style.color = '#a1a1aa';
+        btn.style.boxShadow = 'none';
+      }
+    }
+
+    if (terminal) {
+      terminal.style.display = this.isAiEnabled ? 'block' : 'none';
+    }
+  }
+
+  private updateAiThought(data: {
+    state: string;
+    thought: string;
+    targetScene: 'door' | 'window' | 'cellar';
+    threats: { door: number; window: number; cellar: number };
+    actionText: string;
+  }): void {
+    const badge = document.getElementById('hud-ai-state-badge');
+    if (badge) badge.innerText = data.state;
+
+    const thoughtEl = document.getElementById('hud-ai-thought-text');
+    if (thoughtEl) thoughtEl.innerText = data.thought;
+
+    const actionEl = document.getElementById('hud-ai-action-text');
+    if (actionEl) actionEl.innerText = data.actionText;
+
+    const doorEl = document.getElementById('hud-ai-threat-door');
+    if (doorEl) {
+      doorEl.innerText = `${data.threats.door}%`;
+      doorEl.style.color = data.threats.door >= 70 ? '#ff3333' : data.threats.door >= 35 ? '#ffaa00' : '#00ff88';
+    }
+
+    const windowEl = document.getElementById('hud-ai-threat-window');
+    if (windowEl) {
+      windowEl.innerText = `${data.threats.window}%`;
+      windowEl.style.color = data.threats.window >= 70 ? '#ff3333' : data.threats.window >= 35 ? '#ffaa00' : '#00ff88';
+    }
+
+    const cellarEl = document.getElementById('hud-ai-threat-cellar');
+    if (cellarEl) {
+      cellarEl.innerText = `${data.threats.cellar}%`;
+      cellarEl.style.color = data.threats.cellar >= 70 ? '#ff3333' : data.threats.cellar >= 35 ? '#ffaa00' : '#00ff88';
+    }
   }
 
   private updateSceneDisplay(sceneId: SceneType): void {

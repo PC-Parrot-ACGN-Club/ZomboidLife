@@ -5,6 +5,7 @@ import { HUDOverlay } from '@/ui/HUDOverlay';
 import { EnemyManager } from '@/systems/EnemyManager';
 import { WeaponSystem } from '@/systems/WeaponSystem';
 import { WaveSystem } from '@/systems/WaveSystem';
+import { AISystem } from '@/systems/AISystem';
 import { CCTVModal } from '@/ui/CCTVModal';
 import { GameOverModal } from '@/ui/GameOverModal';
 import { StartScreen } from '@/ui/StartScreen';
@@ -16,6 +17,7 @@ export class GameApp {
   public enemyManager!: EnemyManager;
   public weaponSystem!: WeaponSystem;
   public waveSystem!: WaveSystem;
+  public aiSystem!: AISystem;
   public sceneManager!: SceneManager;
   public hud!: HUDOverlay;
   public cctvModal!: CCTVModal;
@@ -63,26 +65,39 @@ export class GameApp {
     );
     await this.sceneManager.init();
 
-    // 3. 初始化 HUD
+    // 3. 初始化 AI 决策系统
+    this.aiSystem = new AISystem(
+      this.enemyManager,
+      this.weaponSystem,
+      this.waveSystem,
+      this.sceneManager
+    );
+
+    // 4. 初始化 HUD
     this.hud = new HUDOverlay(this.waveSystem, this.enemyManager);
 
-    // 4. 开始界面引导
-    this.startScreen = new StartScreen(() => {
+    // 5. 开始界面引导
+    this.startScreen = new StartScreen((options) => {
       this.isRunning = true;
+      if (options?.aiMode) {
+        this.aiSystem.setEnabled(true);
+      } else {
+        this.aiSystem.setEnabled(false);
+      }
       audioManager.startAmbientDrone();
     });
 
-    // 5. 事件总线绑定
+    // 6. 事件总线绑定
     this.bindEvents();
 
-    // 6. 游戏主循环 Ticker
+    // 7. 游戏主循环 Ticker
     this.app.ticker.add((ticker) => {
       if (!this.isRunning) return;
       const deltaMs = ticker.deltaMS;
       this.update(deltaMs);
     });
 
-    console.log('🎮 Zomboid Defense 全部核心子系统加载完毕');
+    console.log('🎮 Zomboid Defense 全部核心子系统加载完毕 (含 AI 自主决策中枢)');
   }
 
   private update(deltaMs: number): void {
@@ -90,6 +105,7 @@ export class GameApp {
     this.weaponSystem.update(deltaMs);
     this.waveSystem.update(deltaMs);
     this.sceneManager.update(deltaMs);
+    this.aiSystem.update(deltaMs);
     this.hud.update();
 
     // 动态计算全场危机紧张度并调节环境音
@@ -127,17 +143,25 @@ export class GameApp {
       }
     });
 
+    eventBus.on('AI_MODE_TOGGLED', (enabled) => {
+      this.aiSystem.setEnabled(enabled);
+    });
+
     eventBus.on('GAME_OVER', () => {
       audioManager.stopAmbientDrone();
       this.gameOverModal.show({
         survivalTime: this.waveSystem.getSurvivalSeconds(),
         kills: this.waveSystem.getTotalKills(),
         waves: this.waveSystem.getCurrentWave(),
+        aiMode: this.aiSystem.isEnabled(),
       });
     });
 
-    eventBus.on('GAME_RESTART', () => {
+    eventBus.on('GAME_RESTART', (data) => {
       this.isRunning = true;
+      if (data && typeof data.aiMode === 'boolean') {
+        this.aiSystem.setEnabled(data.aiMode);
+      }
       audioManager.startAmbientDrone();
     });
   }

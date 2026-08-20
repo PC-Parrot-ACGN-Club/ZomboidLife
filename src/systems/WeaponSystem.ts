@@ -78,6 +78,16 @@ export class WeaponSystem {
     eventBus.emit('WEAPON_SWITCHED', this.currentWeapon);
   }
 
+  public setWeapon(weapon: WeaponType): void {
+    if (this.currentWeapon !== weapon) {
+      this.switchWeapon();
+    }
+  }
+
+  public getAttackCooldownMs(): number {
+    return this.attackCooldownMs;
+  }
+
   public startReload(): void {
     if (this.currentWeapon !== 'shotgun') return;
     if (this.ammo >= GAME_CONFIG.WEAPONS.SHOTGUN.MAGAZINE_SIZE) return;

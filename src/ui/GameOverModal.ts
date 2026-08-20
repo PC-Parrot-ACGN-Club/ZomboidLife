@@ -2,6 +2,7 @@ import { eventBus } from '@/core/EventBus';
 
 export class GameOverModal {
   private container: HTMLElement | null = null;
+  private lastAiMode: boolean = false;
 
   constructor() {
     this.createDom();
@@ -33,51 +34,84 @@ export class GameOverModal {
     el.innerHTML = `
       <div style="background: rgba(30, 10, 10, 0.95); border: 2px solid #ff3333; border-radius: 8px; padding: clamp(20px, 5vw, 36px); text-align: center; max-width: 480px; width: 100%; box-shadow: 0 0 50px rgba(255, 0, 0, 0.4);">
         <h1 style="color: #ff2222; font-size: clamp(28px, 7vw, 42px); margin-bottom: 6px; letter-spacing: 2px;">GAME OVER</h1>
-        <p style="color: #aaa; font-size: clamp(13px, 3.5vw, 15px); margin-bottom: 20px;">防御已被突破，你未能挺过这一夜...</p>
+        <p style="color: #aaa; font-size: clamp(13px, 3.5vw, 15px); margin-bottom: 20px;">防御已被突破，未能挺过这一夜...</p>
 
         <!-- 本局战绩 -->
         <div style="background: rgba(0,0,0,0.5); padding: 14px 18px; border-radius: 6px; margin-bottom: 20px; text-align: left; font-size: clamp(13px, 3.5vw, 15px); line-height: 1.8;">
-          <div>坚持波次：<span id="go-wave" style="color: #ffaa00; font-weight: bold;">第 1 波</span></div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span>坚持波次：<span id="go-wave" style="color: #ffaa00; font-weight: bold;">第 1 波</span></span>
+            <span id="go-mode-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #333; color: #ccc;">手动模式</span>
+          </div>
           <div>存活时间：<span id="go-time" style="color: #00ff88; font-weight: bold;">00:00</span></div>
           <div>击杀数量：<span id="go-kills" style="color: #44ddff; font-weight: bold;">0 只</span></div>
           <hr style="border: 0; border-top: 1px solid #333; margin: 8px 0;">
           <div style="font-size: 12px; color: #888;">历史最高波次：<span id="go-best-wave" style="color: #fff;">1</span></div>
         </div>
 
-        <button id="btn-restart" style="
-          background: #cc2222;
-          color: #fff;
-          border: none;
-          padding: 12px 36px;
-          min-height: 48px;
-          font-size: clamp(16px, 4vw, 18px);
-          font-weight: bold;
-          border-radius: 6px;
-          cursor: pointer;
-          transition: background 0.2s;
-          touch-action: manipulation;
-          width: 100%;
-        ">重新开始 (RESTART)</button>
+        <div style="display: flex; gap: 10px; flex-direction: column;">
+          <button id="btn-restart" style="
+            background: #cc2222;
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            min-height: 48px;
+            font-size: clamp(15px, 4vw, 17px);
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            touch-action: manipulation;
+            width: 100%;
+          ">⚔️ 重新开始 (手动游玩)</button>
+
+          <button id="btn-restart-ai" style="
+            background: linear-gradient(135deg, #0e7490 0%, #0369a1 100%);
+            color: #e0f2fe;
+            border: 2px solid #38bdf8;
+            padding: 12px 24px;
+            min-height: 48px;
+            font-size: clamp(15px, 4vw, 17px);
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+            touch-action: manipulation;
+            width: 100%;
+          ">🤖 AI 模式重新开始 (观战)</button>
+        </div>
       </div>
     `;
 
     document.body.appendChild(el);
     this.container = el;
 
-    const restartHandler = () => {
+    const restartManual = () => {
       this.hide();
-      eventBus.emit('GAME_RESTART');
+      eventBus.emit('GAME_RESTART', { aiMode: false });
     };
 
-    document.getElementById('btn-restart')?.addEventListener('click', restartHandler);
+    const restartAi = () => {
+      this.hide();
+      eventBus.emit('GAME_RESTART', { aiMode: true });
+    };
+
+    document.getElementById('btn-restart')?.addEventListener('click', restartManual);
     document.getElementById('btn-restart')?.addEventListener('touchend', (e) => {
       e.preventDefault();
-      restartHandler();
+      restartManual();
+    });
+
+    document.getElementById('btn-restart-ai')?.addEventListener('click', restartAi);
+    document.getElementById('btn-restart-ai')?.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      restartAi();
     });
   }
 
-  public show(stats: { survivalTime: number; kills: number; waves: number }): void {
+  public show(stats: { survivalTime: number; kills: number; waves: number; aiMode?: boolean }): void {
     if (!this.container) return;
+
+    this.lastAiMode = !!stats.aiMode;
 
     // 读取并更新历史最高纪录
     const bestWave = Math.max(stats.waves, parseInt(localStorage.getItem('zomboid_best_wave') || '1', 10));
@@ -90,11 +124,25 @@ export class GameOverModal {
     const timeEl = document.getElementById('go-time');
     const killsEl = document.getElementById('go-kills');
     const bestEl = document.getElementById('go-best-wave');
+    const modeBadge = document.getElementById('go-mode-badge');
 
     if (waveEl) waveEl.innerText = `第 ${stats.waves} 波`;
     if (timeEl) timeEl.innerText = `${mins}:${secs}`;
     if (killsEl) killsEl.innerText = `${stats.kills} 只`;
     if (bestEl) bestEl.innerText = `第 ${bestWave} 波`;
+    if (modeBadge) {
+      if (this.lastAiMode) {
+        modeBadge.innerText = '🤖 AI 托管模式';
+        modeBadge.style.background = '#0e7490';
+        modeBadge.style.color = '#e0f2fe';
+        modeBadge.style.border = '1px solid #38bdf8';
+      } else {
+        modeBadge.innerText = '⚔️ 手动操作模式';
+        modeBadge.style.background = '#333';
+        modeBadge.style.color = '#ccc';
+        modeBadge.style.border = '1px solid #555';
+      }
+    }
 
     this.container.style.display = 'flex';
   }

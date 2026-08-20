@@ -23,6 +23,8 @@ export type GameEventMap = {
   ENEMY_SPAWNED: (data: { id: string; type: string; sceneId: string }) => void;
   ENEMY_DAMAGED: (data: { id: string; damage: number }) => void;
   ENEMY_KILLED: (data: { id: string; type: string; sceneId: string }) => void;
+  LAUGHER_ATTACK_DECIDED: (data: { id: string }) => void;
+  MIMIC_VOICE_EMITTED: (data: { id: string; voiceType: 'own' | 'walker' | 'laugher' }) => void;
   BARRICADE_DAMAGED: (data: { sceneId: string; currentHealth: number; maxHealth: number }) => void;
   FAULT_TOLERANCE_TRIGGERED: (data: {
     type: 'turret' | 'trap';
@@ -31,11 +33,22 @@ export type GameEventMap = {
     clearedCount: number;
   }) => void;
 
+  // AI 自动游玩模式
+  AI_MODE_TOGGLED: (enabled: boolean) => void;
+  AI_THOUGHT_UPDATED: (data: {
+    enabled: boolean;
+    state: string;
+    thought: string;
+    targetScene: 'door' | 'window' | 'cellar';
+    threats: { door: number; window: number; cellar: number };
+    actionText: string;
+  }) => void;
+
   // 波次与游戏流程
   WAVE_STARTED: (waveNumber: number) => void;
   WAVE_CLEARED: (waveNumber: number) => void;
   GAME_OVER: (stats: { survivalTime: number; kills: number; waves: number }) => void;
-  GAME_RESTART: () => void;
+  GAME_RESTART: (data?: { aiMode?: boolean }) => void;
 };
 
 class TypedEventBus extends EventEmitter<GameEventMap> {}

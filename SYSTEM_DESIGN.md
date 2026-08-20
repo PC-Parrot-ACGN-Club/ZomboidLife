@@ -145,15 +145,17 @@ sequenceDiagram
 #### 核心算法逻辑：
 1.  **波次配额生成**：
     $$N_{wave} = 6 + (Wave - 1) \times 4$$
-    根据当前波次按概率权重填充怪物生成队列：
-    *   Wave 1~2：Walker (70%), Laugher (30%)
-    *   Wave 3+：Walker (40%), Laugher (35%), Mimic (25%)
+    根据当前波次按概率权重填充怪物生成队列（已降低 Laugher 数量与刷新频率，引入防连续扎堆机制）：
+    *   Wave 1：Walker (85%), Laugher (15%, 且上限 1 只)
+    *   Wave 2：Walker (65%), Laugher (15%), Mimic (20%)
+    *   Wave 3+：Walker (55%), Laugher (15%), Mimic (30%)
+    *   **Laugher 频率调控**：队列中 Laugher 之间至少间隔 2 只其它怪物，且波次首位不刷 Laugher；刷出 Laugher 时额外附加 800ms 刷新缓冲。
 2.  **噪音与刷怪加速曲线 (Noise Acceleration)**：
     *   系统维护全局变量 `noiseLevel`（初始为 0，开枪后 $+1.0$，随时间指数衰减）。
     *   动态下次刷新间隔：
         $$T_{actual} = \frac{T_{base}}{1.0 + (\alpha \times noiseLevel)}$$
-        *(其中 $T_{base} = 5.0s$, $\alpha = 1.5$)*
-    *   **效果**：开枪后几秒内，剩余怪物将密集刷出；用刀则维持每 5 秒一只的平缓节奏。
+        *(其中 $T_{base} = 3.2s$, $\alpha = 1.6$)*
+    *   **效果**：开枪后几秒内，剩余怪物将密集刷出；用刀则维持平缓节奏。
 
 ---
 
@@ -177,6 +179,19 @@ sequenceDiagram
     *   **动态白噪声 (Noise/Static)**：每帧传入随机 `uTime` 种子生成噪点。
     *   **绿色夜视/单色色调 (Phosphor Green Tint)**：将色彩转为亮度灰阶后乘以 `vec3(0.2, 1.0, 0.4)`。
 
+### 4.6 AI 自主决策与观战系统 (AI Autoplay System)
+
+*   **架构与调度**：`AISystem` 作为独立系统挂载在主循环中，以 80ms 周期量化评估 3 个场景的威胁度。
+*   **威胁计算模型**：
+    *   **窗户 (Laugher)**：攻击破窗倒计时剩余时间加权计算紧急度（破窗前最高达 2800）；贴脸凝视威胁度 860。
+    *   **正门 (Walker)**：按木板存量与机枪状态量化（无板无机枪紧急度 2800；拆板中 620~880）。
+    *   **地窖 (Mimic)**：撞门且无陷阱紧急度 2700；中段攀爬 660~920；梯底窥探时触发视线压制。
+*   **战术行为树**：
+    *   **紧急交火**：切入最高威胁场景，霰弹枪优先必杀，0 弹贴脸切刀，远距装填。
+    *   **休整与装弹**：安全期及波次结算期自动压满 8 发霰弹枪弹药。
+    *   **全域巡防**：无敌情时以 1600ms 周期轮巡 3 场景，消除死角隐患。
+*   **实时决策看板**：通过 EventBus 广播思维流与威胁雷达，HUD 呈现 Cyberpunk 决策看板。
+
 ---
 
 ## 5. 工程代码目录规范
@@ -194,14 +209,15 @@ sequenceDiagram
 │   │   ├── GameApp.ts      # PixiJS Application 初始化与生命周期
 │   │   ├── EventBus.ts     # 强类型全局事件总线
 │   │   └── StateMachine.ts # 游戏状态机 (Menu / Playing / GameOver)
-│   ├── config/             # 数值配置与常量 (怪物数值、波次公式、武器属性)
+│   ├── config/             # 数值配置与常量 (怪物数值、波次公式、武器属性、AI 参数)
 │   ├── audio/              # 音频管理
 │   │   ├── AudioManager.ts # 统一音频播放器 (Howler 封装)
 │   │   └── SoundDefs.ts    # 音效资源枚举与声像配置
 │   ├── systems/            # 游戏系统
 │   │   ├── WaveSystem.ts   # 波次配额、队列生成与噪音刷新算法
 │   │   ├── WeaponSystem.ts # 武器切换、弹药管理、后坐力与射击判定
-│   │   └── EnemyManager.ts # 怪物状态推进、破坏倒计时与攻击判定
+│   │   ├── EnemyManager.ts # 怪物状态推进、破坏倒计时与攻击判定
+│   │   └── AISystem.ts     # AI 自动决策系统 (威胁评估、战术动作、思维流)
 │   ├── scenes/             # 场景与视图
 │   │   ├── BaseScene.ts    # 场景基类 (图层挂载、过渡)
 │   │   ├── SceneManager.ts # 3 场景切换调度器
@@ -211,8 +227,10 @@ sequenceDiagram
 │   ├── shaders/            # 自定义 GLSL 着色器
 │   │   └── CCTVFilter.ts   # 扫描线与夜视噪点滤镜
 │   └── ui/                 # UI 控制器
-│       ├── HUDView.ts      # 顶部波次/时间、底部武器弹药槽
-│       └── GameOverModal.ts# 死亡结算与最高记录面板
+│       ├── HUDOverlay.ts   # 顶部波次/时间、AI决策看板、底部武器弹药槽
+│       ├── StartScreen.ts  # 开始界面 (支持手动与 AI 模式选择)
+│       ├── CCTVModal.ts    # 3 路监控分屏模态框
+│       └── GameOverModal.ts# 死亡结算与最高记录面板 (支持 AI 重启)
 ```
 
 ---

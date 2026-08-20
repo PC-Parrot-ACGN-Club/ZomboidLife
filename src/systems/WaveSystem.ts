@@ -60,15 +60,34 @@ export class WaveSystem {
       // 核心公式: 基础刷怪速度 (随波次轻微提速) + 噪音压缩刷新间隔
       const waveSpeedFactor = Math.min(1.35, 1.0 + (this.currentWave - 1) * 0.06);
       const baseInterval = GAME_CONFIG.WAVE.BASE_INTERVAL_MS / waveSpeedFactor;
-      const dynamicInterval = Math.max(
+      let dynamicInterval = Math.max(
         GAME_CONFIG.WAVE.MIN_INTERVAL_MS,
         baseInterval / (1.0 + 1.6 * this.noiseLevel)
       );
 
+      // 若当前队列即将刷出的是 Laugher，增加额外延迟缓冲，降低 Laugher 的瞬时刷新频率
+      if (this.enemyQueue[0] === 'laugher') {
+        dynamicInterval += GAME_CONFIG.WAVE.LAUGHER_CONFIG.EXTRA_SPAWN_DELAY_MS;
+      }
+
       if (this.spawnTimerMs >= dynamicInterval) {
-        this.spawnTimerMs = 0;
-        const nextType = this.enemyQueue.shift()!;
-        this.enemyManager.spawnEnemy(nextType);
+        // 同一时间窗外最多有一只 Laugher
+        if (this.enemyQueue[0] === 'laugher' && this.enemyManager.hasActiveLaugher()) {
+          // 查找队列中下一个非 Laugher 怪物提前刷出
+          const nextNonLaugherIndex = this.enemyQueue.findIndex((t) => t !== 'laugher');
+          if (nextNonLaugherIndex !== -1) {
+            this.spawnTimerMs = 0;
+            const [nextType] = this.enemyQueue.splice(nextNonLaugherIndex, 1);
+            this.enemyManager.spawnEnemy(nextType);
+          } else {
+            // 队列中只剩 Laugher，等待场上的 Laugher 死亡
+            this.spawnTimerMs = dynamicInterval;
+          }
+        } else {
+          this.spawnTimerMs = 0;
+          const nextType = this.enemyQueue.shift()!;
+          this.enemyManager.spawnEnemy(nextType);
+        }
       }
     } else {
       // 队列已刷完，检查场上是否所有怪物已被消灭
@@ -89,28 +108,69 @@ export class WaveSystem {
 
   private generateEnemyQueue(wave: number): EnemyType[] {
     const totalCount = 6 + (wave - 1) * 4;
-    const queue: EnemyType[] = [];
+    const weights =
+      wave === 1
+        ? GAME_CONFIG.WAVE.SPAWN_WEIGHTS.WAVE_1
+        : wave === 2
+        ? GAME_CONFIG.WAVE.SPAWN_WEIGHTS.WAVE_2
+        : GAME_CONFIG.WAVE.SPAWN_WEIGHTS.WAVE_DEFAULT;
+
+    // 限制单波次内 Laugher 的最大数量 (波次 1 最多 1 只，后续波次按 15% 比例限制)
+    const maxLaughers = wave === 1 ? 1 : Math.max(1, Math.round(totalCount * weights.laugher));
+    let laugherCount = 0;
+    const initialQueue: EnemyType[] = [];
 
     for (let i = 0; i < totalCount; i++) {
       const rand = Math.random();
-      if (wave === 1) {
-        // 第一波：70% 行者, 30% 笑者
-        queue.push(rand < 0.7 ? 'walker' : 'laugher');
-      } else if (wave === 2) {
-        // 第二波：50% 行者, 40% 笑者, 10% 拟态者
-        if (rand < 0.5) queue.push('walker');
-        else if (rand < 0.9) queue.push('laugher');
-        else queue.push('mimic');
+      if (rand < weights.walker) {
+        initialQueue.push('walker');
+      } else if (rand < weights.walker + weights.laugher) {
+        if (laugherCount < maxLaughers) {
+          initialQueue.push('laugher');
+          laugherCount++;
+        } else {
+          initialQueue.push('walker');
+        }
       } else {
-        // 第三波及之后：40% 行者, 35% 笑者, 25% 拟态者
-        if (rand < 0.4) queue.push('walker');
-        else if (rand < 0.75) queue.push('laugher');
-        else queue.push('mimic');
+        initialQueue.push('mimic');
       }
     }
 
-    // 随机打乱队列
-    return queue.sort(() => Math.random() - 0.5);
+    // 随机洗牌 (Fisher-Yates 洗牌算法)
+    for (let i = initialQueue.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [initialQueue[i], initialQueue[j]] = [initialQueue[j], initialQueue[i]];
+    }
+
+    // 防扎堆与安全间隔编排：确保 Laugher 不出现在首位，且 Laugher 之间至少间隔指定数量的其他怪物
+    const minSpacing = GAME_CONFIG.WAVE.LAUGHER_CONFIG.MIN_SPACING;
+    const nonLaughers = initialQueue.filter((t) => t !== 'laugher');
+    const laughers = initialQueue.filter((t) => t === 'laugher');
+
+    const resultQueue: EnemyType[] = [];
+    let lastLaugherDistance = minSpacing; // 初始允许在安全距离后插入
+
+    // 开局首只怪强制为非 Laugher，给玩家留出初始布防与观察时间
+    if (nonLaughers.length > 0) {
+      resultQueue.push(nonLaughers.shift()!);
+      lastLaugherDistance = 1;
+    }
+
+    while (nonLaughers.length > 0 || laughers.length > 0) {
+      if (laughers.length > 0 && lastLaugherDistance >= minSpacing) {
+        resultQueue.push(laughers.shift()!);
+        lastLaugherDistance = 0;
+      } else if (nonLaughers.length > 0) {
+        resultQueue.push(nonLaughers.shift()!);
+        lastLaugherDistance++;
+      } else {
+        // 只剩 Laugher 时的兜底追加
+        resultQueue.push(laughers.shift()!);
+        lastLaugherDistance = 0;
+      }
+    }
+
+    return resultQueue;
   }
 
   private handleWaveCleared(): void {
@@ -138,6 +198,10 @@ export class WaveSystem {
 
   public getRemainingInWave(): number {
     return this.enemyQueue.length + this.enemyManager.getAllActiveEnemies().length;
+  }
+
+  public getIsWaveResting(): boolean {
+    return this.isWaveResting;
   }
 
   private bindEvents(): void {
