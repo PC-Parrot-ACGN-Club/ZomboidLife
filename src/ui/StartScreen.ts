@@ -48,6 +48,9 @@ export class StartScreen {
           <div style="color: #44ddff; margin-top: 6px;">
             🔫 <strong>泵动式霰弹枪</strong>：8 发弹容，支持逐发压弹装填，装弹中可随时开火打断！
           </div>
+          <div style="color: #f472b6; margin-top: 4px;">
+            👁️ <strong>笑者 (Laugher) 机制</strong>：仅在准备破窗攻击（狞笑与敲窗声）时才可被击杀；未攻击时在窗口开枪会将其吓退回草坪远处（不会逃离场景）！
+          </div>
           <div style="color: #00ff88; margin-top: 4px;">
             🛡️ <strong>应急容错机制</strong>：正门木板初次攻破时自动机枪全歼门外僵尸；活板门初次攻破时落石陷阱砸碎梯上所有怪！
           </div>

@@ -188,16 +188,16 @@ export class CCTVModal {
 
     if (enemy.type === 'laugher') {
       if (enemy.laugherState === 'hidden') {
-        stageText = '躲在窗框后 (HIDDEN)';
+        stageText = '躲在窗框后 (潜伏未攻击/开枪可吓退至远处)';
         alertColor = '#8899aa';
       } else if (enemy.laugherState === 'idle_far') {
-        stageText = '远端驻足 (FAR STANDING)';
+        stageText = '远端驻足 (未攻击/开枪可吓退重置)';
         alertColor = '#ffaa00';
       } else if (enemy.laugherState === 'stare_close') {
-        stageText = '⚠️ 贴窗凝视 (STARING CLOSE)';
+        stageText = '⚠️ 贴窗凝视 (未攻击/开枪可吓退至远处)';
         alertColor = '#ff8800';
       } else if (enemy.laugherState === 'attacking') {
-        stageText = '🚨 破窗突袭中！(ATTACKING)';
+        stageText = '🚨 破窗突袭中！(可开火/挥刀击杀)';
         alertColor = '#ff2222';
       }
     } else if (enemy.type === 'mimic') {

@@ -619,6 +619,71 @@ export class AudioManager {
   }
 
   /**
+   * 笑者被枪声吓退仓皇逃窜声 (受惊尖叫 + 快速向远方衰减的啸叫与多普勒音)
+   */
+  public playLaugherFleeSound(pan: number = 0.75): void {
+    if (!this.ctx || this.isMuted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const { inputNode } = this.createPannedChain(pan);
+
+    // 1. 受惊尖锐嘶叫 (快速升频后暴跌)
+    const osc = this.ctx.createOscillator();
+    const lfo = this.ctx.createOscillator();
+    const lfoGain = this.ctx.createGain();
+    const gain = this.ctx.createGain();
+
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(28, t); // 极速受惊颤音
+    lfoGain.gain.setValueAtTime(220, t);
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(900, t);
+    osc.frequency.exponentialRampToValueAtTime(1600, t + 0.15); // 惊叫
+    osc.frequency.exponentialRampToValueAtTime(220, t + 0.65); // 远窜衰减
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+
+    gain.gain.setValueAtTime(0.65, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.65);
+
+    osc.connect(gain);
+    gain.connect(inputNode);
+
+    lfo.start(t);
+    osc.start(t);
+    lfo.stop(t + 0.65);
+    osc.stop(t + 0.65);
+
+    // 2. 灌木草丛被仓皇撞开的风声/杂音
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.45);
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1400, t);
+    filter.frequency.exponentialRampToValueAtTime(400, t + 0.45);
+
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.4, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.45);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(inputNode);
+
+    noise.start(t);
+    noise.stop(t + 0.45);
+  }
+
+  /**
    * 地窖活板门爬行/撞击声 (左侧偏下方位 pan = -0.75, 低通滤波)
    */
   public playCellarLadderSound(pan: number = -0.75): void {

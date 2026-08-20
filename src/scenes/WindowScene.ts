@@ -31,9 +31,12 @@ export class WindowScene extends BaseScene {
     windowBack.fill({ color: 0x020710 });
     this.addChild(windowBack);
 
-    // 3. 怪物渲染层
+    // 3. 怪物渲染层与逃窜特效层
     this.enemyVisualContainer = new Container();
     this.addChild(this.enemyVisualContainer);
+
+    this.fleeContainer = new Graphics();
+    this.addChild(this.fleeContainer);
 
     // 4. 玻璃反光与窗框十字格 (遮挡在怪物前面)
     this.glassLayer = new Graphics();
@@ -67,8 +70,20 @@ export class WindowScene extends BaseScene {
     this.glassLayer.fill({ color: 0x66ccff, alpha: 0.1 });
   }
 
-  public override update(_deltaMs: number): void {
+  private fleeTimerMs: number = 0;
+  private fleeContainer!: Graphics;
+
+  public override update(deltaMs: number): void {
     if (!this.isCurrentActive) return;
+
+    // 更新惊吓逃窜视觉特效
+    if (this.fleeTimerMs > 0) {
+      this.fleeTimerMs -= deltaMs;
+      this.renderFleeVfx();
+      if (this.fleeTimerMs <= 0) {
+        this.fleeContainer.clear();
+      }
+    }
 
     this.enemyVisualContainer.removeChildren();
     const enemies = this.enemyManager.getEnemiesForScene('window');
@@ -146,6 +161,30 @@ export class WindowScene extends BaseScene {
     }
   }
 
+  private renderFleeVfx(): void {
+    this.fleeContainer.clear();
+    const cx = GAME_CONFIG.CANVAS_WIDTH / 2;
+    const progress = 1.0 - this.fleeTimerMs / 500; // 0.0 -> 1.0
+    const alpha = Math.max(0, 1.0 - progress);
+
+    // 受惊快速从窗前缩回草坪远处 (cx+70, 320)
+    const fleeX = cx + progress * 70;
+    const fleeY = 340 - progress * 20;
+    const scale = Math.max(0.3, 1.0 - progress * 0.7);
+
+    // 缩退残影
+    this.fleeContainer.ellipse(fleeX, fleeY, 80 * scale, 120 * scale);
+    this.fleeContainer.fill({ color: 0x050a12, alpha: alpha * 0.75 });
+
+    // 速度线 / 扬尘烟雾
+    for (let i = 0; i < 3; i++) {
+      const lineY = fleeY + (i - 1) * 20 * scale;
+      this.fleeContainer.moveTo(fleeX - 30 * scale, lineY);
+      this.fleeContainer.lineTo(fleeX + 30 * scale, lineY);
+      this.fleeContainer.stroke({ width: 2 * scale, color: 0x6688aa, alpha: alpha * 0.6 });
+    }
+  }
+
   public showMuzzleFlash(): void {
     this.vfxContainer.clear();
     this.vfxContainer.circle(GAME_CONFIG.CANVAS_WIDTH / 2, GAME_CONFIG.CANVAS_HEIGHT / 2, 280);
@@ -160,6 +199,10 @@ export class WindowScene extends BaseScene {
       if (this.isCurrentActive && data.weapon === 'shotgun') {
         this.showMuzzleFlash();
       }
+    });
+
+    eventBus.on('LAUGHER_SCARED_AWAY', () => {
+      this.fleeTimerMs = 500;
     });
   }
 }

@@ -196,8 +196,7 @@ export class AISystem {
       const isCloseRange =
         targetEnemy &&
         (targetEnemy.stage === targetEnemy.maxStage ||
-          targetEnemy.laugherState === 'stare_close' ||
-          targetEnemy.laugherState === 'attacking');
+          (targetEnemy.type === 'laugher' && targetEnemy.laugherState === 'attacking'));
 
       // 弹药与武器策略
       if (shotgunAmmo > 0) {
@@ -300,7 +299,16 @@ export class AISystem {
         return;
       }
 
-      // 其他远端敌人：直接开火击杀
+      // 如果在窗户场景面对未攻击的 Laugher：AI 保持静默架枪守窗，严禁盲目开火吓退导致死循环
+      if (topThreat.sceneId === 'window' && topThreat.priorityTarget.type === 'laugher') {
+        this.currentState = '👀 窗口静默警戒';
+        this.currentThought = '笑者在窗外徘徊未攻击，AI 保持静默满弹架枪，静候其破窗发动突袭再予击杀';
+        this.currentActionText = '🛡️ 静默架枪守窗';
+        this.broadcastThought();
+        return;
+      }
+
+      // 其他远端敌人 (正门 Walker)：直接开火击杀
       if (this.weaponSystem.getAttackCooldownMs() <= 0) {
         this.currentState = '💥 远距离先行歼敌';
         this.currentThought = topThreat.reason;
@@ -417,7 +425,7 @@ export class AISystem {
       return {
         sceneId: 'window',
         threat: urgency,
-        reason: `🚨 致命危机：笑者破窗突袭中！仅剩 ${(remainingMs / 1000).toFixed(1)}s 破入！`,
+        reason: `🚨 致命危机：笑者破窗突袭中！仅剩 ${(remainingMs / 1000).toFixed(1)}s 破入！(立即开火或挥刀)`,
         priorityTarget: laugher,
       };
     }
@@ -425,8 +433,8 @@ export class AISystem {
     if (state === 'stare_close') {
       return {
         sceneId: 'window',
-        threat: 860,
-        reason: '⚠️ 极高威胁：笑者在窗前贴脸死死凝视，随时可能狂暴突袭！',
+        threat: 80,
+        reason: '👀 贴窗凝视：笑者在窗外窥探未攻击，AI 保持警戒静候其破窗突袭',
         priorityTarget: laugher,
       };
     }
@@ -434,8 +442,8 @@ export class AISystem {
     if (state === 'idle_far') {
       return {
         sceneId: 'window',
-        threat: 210,
-        reason: '👀 中低威胁：笑者在草坪远端伫立观察',
+        threat: 40,
+        reason: '👀 远端伫立：笑者在草坪远端观察，暂无实质威胁',
         priorityTarget: laugher,
       };
     }
@@ -443,8 +451,8 @@ export class AISystem {
     // hidden
     return {
       sceneId: 'window',
-      threat: 170,
-      reason: '🔍 低威胁：笑者潜伏于窗框阴影盲区',
+      threat: 20,
+      reason: '🔍 阴影潜伏：笑者潜伏于窗框盲区，暂无实质威胁',
       priorityTarget: laugher,
     };
   }

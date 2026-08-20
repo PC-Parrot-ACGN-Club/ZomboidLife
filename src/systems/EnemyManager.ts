@@ -465,23 +465,60 @@ export class EnemyManager {
 
     // 战术刀只能攻击处于 Close/Attacking 状态的怪
     if (weaponType === 'knife') {
-      const closeTarget = targets.find(
-        (e) =>
-          e.stage === e.maxStage ||
-          e.laugherState === 'stare_close' ||
-          e.laugherState === 'attacking'
-      );
+      const closeTarget = targets.find((e) => {
+        if (e.type === 'laugher') {
+          // 只有在 Laugher 准备发动攻击时才能用刀攻击它
+          return e.laugherState === 'attacking';
+        }
+        return e.stage === e.maxStage;
+      });
       if (closeTarget) {
         return this.applyDamage(closeTarget, damage);
       }
       return false;
     }
 
-    // 霰弹枪优先攻击最近的敌人，同时造成范围伤害
+    // 霰弹枪攻击逻辑
+    if (sceneId === 'window') {
+      const laugher = targets.find((e) => e.type === 'laugher');
+      if (laugher) {
+        if (laugher.laugherState === 'attacking') {
+          // 只有在 Laugher 准备发动攻击时才能用枪造成伤害
+          return this.applyDamage(laugher, damage);
+        } else {
+          // Laugher 没攻击时，玩家在窗口开枪会把 Laugher 吓走
+          return this.scareAwayLaugher(laugher);
+        }
+      }
+      return false;
+    }
+
+    // 霰弹枪在正门/地窖优先攻击最近的敌人，同时造成范围伤害
     // 找到当前场景中 stage 最高的怪
     targets.sort((a, b) => b.stage - a.stage);
     const primary = targets[0];
     return this.applyDamage(primary, damage);
+  }
+
+  /**
+   * 玩家在窗口开枪吓退未发动攻击的笑者 (缩回草坪远处，不逃离场景)
+   */
+  public scareAwayLaugher(laugher: EnemyInstance): boolean {
+    if (laugher.isDead) return false;
+
+    // 吓退回草坪远端 idle_far 状态，重置决断计时
+    laugher.laugherState = 'idle_far';
+    laugher.stage = 0;
+    laugher.laugherStateTimerMs = 0;
+    const decisionMin = GAME_CONFIG.ENEMIES.LAUGHER.DECISION_MIN_MS;
+    const decisionMax = GAME_CONFIG.ENEMIES.LAUGHER.DECISION_MAX_MS;
+    laugher.laugherNextDecisionMs = decisionMin + Math.random() * (decisionMax - decisionMin);
+
+    audioManager.playLaugherFleeSound(0.75);
+    console.log(`[Laugher] 窗口枪声惊吓！笑者受惊缩回草坪远处！id: ${laugher.id}`);
+
+    eventBus.emit('LAUGHER_SCARED_AWAY', { id: laugher.id });
+    return true;
   }
 
   private applyDamage(enemy: EnemyInstance, damage: number): boolean {

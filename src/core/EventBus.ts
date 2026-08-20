@@ -24,6 +24,7 @@ export type GameEventMap = {
   ENEMY_DAMAGED: (data: { id: string; damage: number }) => void;
   ENEMY_KILLED: (data: { id: string; type: string; sceneId: string }) => void;
   LAUGHER_ATTACK_DECIDED: (data: { id: string }) => void;
+  LAUGHER_SCARED_AWAY: (data: { id: string }) => void;
   MIMIC_VOICE_EMITTED: (data: { id: string; voiceType: 'own' | 'walker' | 'laugher' }) => void;
   BARRICADE_DAMAGED: (data: { sceneId: string; currentHealth: number; maxHealth: number }) => void;
   FAULT_TOLERANCE_TRIGGERED: (data: {

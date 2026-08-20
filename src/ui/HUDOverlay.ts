@@ -439,6 +439,10 @@ export class HUDOverlay {
       this.showAlertBanner(message);
     });
 
+    eventBus.on('LAUGHER_SCARED_AWAY', () => {
+      this.showAlertBanner('💥 枪声惊吓！窗外笑者受惊缩回草坪远处！');
+    });
+
     eventBus.on('WAVE_STARTED', (wave) => {
       const el = document.getElementById('hud-wave');
       if (el) el.innerText = wave.toString();
